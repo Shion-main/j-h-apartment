@@ -328,16 +328,17 @@ export default function HistoryPage() {
   const renderAuditLogsTable = () => {
     return (
       <div className="rounded-md border">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Timestamp</TableHead>
-              <TableHead>User</TableHead>
-              <TableHead>Action</TableHead>
-              <TableHead>Target</TableHead>
-              <TableHead className="text-right">Changes</TableHead>
-            </TableRow>
-          </TableHeader>
+        <div className="max-h-[600px] overflow-y-auto">
+          <Table>
+            <TableHeader className="sticky top-0 bg-white z-10">
+              <TableRow>
+                <TableHead>Timestamp</TableHead>
+                <TableHead>User</TableHead>
+                <TableHead>Action</TableHead>
+                <TableHead>Target</TableHead>
+                <TableHead className="text-right">Changes</TableHead>
+              </TableRow>
+            </TableHeader>
           <TableBody>
             {filteredAuditLogs.length > 0 ? (
               filteredAuditLogs.map((log) => (
@@ -368,6 +369,7 @@ export default function HistoryPage() {
             )}
           </TableBody>
         </Table>
+        </div>
       </div>
     );
   };
@@ -376,8 +378,9 @@ export default function HistoryPage() {
   const renderPaidBillsTable = () => {
     return (
       <div className="rounded-md border">
-        <Table>
-          <TableHeader>
+        <div className="max-h-[600px] overflow-y-auto">
+          <Table>
+            <TableHeader className="sticky top-0 bg-white z-10">
             <TableRow>
               <TableHead>Billing Period</TableHead>
               <TableHead>Tenant</TableHead>
@@ -438,6 +441,7 @@ export default function HistoryPage() {
             )}
           </TableBody>
         </Table>
+        </div>
       </div>
     );
   };
@@ -539,15 +543,16 @@ export default function HistoryPage() {
                 </div>
               </div>
               <div className="rounded-md border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Tenant</TableHead>
-                      <TableHead>Last Room</TableHead>
-                      <TableHead>Contract Dates</TableHead>
-                      <TableHead>Move-Out Date</TableHead>
-                    </TableRow>
-                  </TableHeader>
+                <div className="max-h-[600px] overflow-y-auto">
+                  <Table>
+                    <TableHeader className="sticky top-0 bg-white z-10">
+                      <TableRow>
+                        <TableHead>Tenant</TableHead>
+                        <TableHead>Last Room</TableHead>
+                        <TableHead>Contract Dates</TableHead>
+                        <TableHead>Move-Out Date</TableHead>
+                      </TableRow>
+                    </TableHeader>
                   <TableBody>
                     {filteredMovedOutTenants.length > 0 ? (
                       filteredMovedOutTenants.map((tenant) => (
@@ -575,6 +580,7 @@ export default function HistoryPage() {
                     )}
                   </TableBody>
                 </Table>
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -585,20 +591,20 @@ export default function HistoryPage() {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="space-y-4 sm:space-y-6 px-3 sm:px-0">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">History</h1>
-          <p className="text-muted-foreground">
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">History</h1>
+          <p className="text-muted-foreground text-sm sm:text-base">
             Comprehensive historical data and audit trails
           </p>
         </div>
       </div>
       <div className="border-b">
-        <div className="flex space-x-8">
+        <div className="flex flex-col sm:flex-row sm:space-x-8 space-y-2 sm:space-y-0">
           <button
             onClick={() => setActiveTab('audit-logs')}
-            className={`flex items-center space-x-2 py-2 border-b-2 font-medium text-sm ${
+            className={`flex items-center space-x-2 py-2 border-b-2 font-medium text-sm w-full sm:w-auto justify-center sm:justify-start ${
               activeTab === 'audit-logs'
                 ? 'border-primary text-primary'
                 : 'border-transparent text-muted-foreground hover:text-foreground'
@@ -609,7 +615,7 @@ export default function HistoryPage() {
           </button>
           <button
             onClick={() => setActiveTab('paid-bills')}
-            className={`flex items-center space-x-2 py-2 border-b-2 font-medium text-sm ${
+            className={`flex items-center space-x-2 py-2 border-b-2 font-medium text-sm w-full sm:w-auto justify-center sm:justify-start ${
               activeTab === 'paid-bills'
                 ? 'border-primary text-primary'
                 : 'border-transparent text-muted-foreground hover:text-foreground'
@@ -620,7 +626,7 @@ export default function HistoryPage() {
           </button>
           <button
             onClick={() => setActiveTab('moved-out-tenants')}
-            className={`flex items-center space-x-2 py-2 border-b-2 font-medium text-sm ${
+            className={`flex items-center space-x-2 py-2 border-b-2 font-medium text-sm w-full sm:w-auto justify-center sm:justify-start ${
               activeTab === 'moved-out-tenants'
                 ? 'border-primary text-primary'
                 : 'border-transparent text-muted-foreground hover:text-foreground'

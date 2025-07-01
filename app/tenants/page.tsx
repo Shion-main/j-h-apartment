@@ -586,24 +586,24 @@ export default function TenantsPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6 px-3 sm:px-0">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Tenants</h1>
-          <p className="text-muted-foreground">
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Tenants</h1>
+          <p className="text-muted-foreground text-sm sm:text-base">
             Manage active tenant information and move-in processes
           </p>
         </div>
         
         <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
           <DialogTrigger asChild>
-            <Button>
+            <Button className="w-full sm:w-auto">
               <Plus className="h-4 w-4 mr-2" />
               Add Tenant
             </Button>
           </DialogTrigger>
-          <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
+          <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto mx-4">
             <form onSubmit={handleAddTenant}>
               <DialogHeader>
                 <DialogTitle>Add New Tenant (Move-In)</DialogTitle>
@@ -613,8 +613,8 @@ export default function TenantsPage() {
               </DialogHeader>
 
               <div className="grid gap-4 py-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="sm:col-span-1">
                     <Label htmlFor="full_name">Full Name *</Label>
                     <Input
                       id="full_name"
@@ -863,17 +863,18 @@ export default function TenantsPage() {
 
           {/* Tenants Table */}
           <div className="rounded-md border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Tenant</TableHead>
-                  <TableHead>Room & Branch</TableHead>
-                  <TableHead>Contract</TableHead>
-                  <TableHead>Rent</TableHead>
-                  <TableHead>Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
+            <div className="max-h-[600px] overflow-y-auto">
+              <Table>
+                <TableHeader className="sticky top-0 bg-white z-10">
+                  <TableRow>
+                    <TableHead>Tenant</TableHead>
+                    <TableHead>Room & Branch</TableHead>
+                    <TableHead>Contract</TableHead>
+                    <TableHead>Rent</TableHead>
+                    <TableHead>Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                 {filteredTenants.length > 0 ? (
                   filteredTenants.map((tenant) => (
                     <TableRow key={tenant.id}>
@@ -971,6 +972,7 @@ export default function TenantsPage() {
                 )}
               </TableBody>
             </Table>
+            </div>
           </div>
         </CardContent>
       </Card>

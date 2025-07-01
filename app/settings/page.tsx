@@ -123,22 +123,22 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="space-y-8 max-w-4xl mx-auto">
+    <div className="space-y-6 sm:space-y-8 max-w-4xl mx-auto px-3 sm:px-0">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight flex items-center">
-             <SettingsIcon className="h-8 w-8 text-primary mr-3" />
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight flex items-center">
+             <SettingsIcon className="h-6 w-6 sm:h-8 sm:w-8 text-primary mr-3" />
             Settings
           </h1>
-          <p className="text-muted-foreground mt-1">
+          <p className="text-muted-foreground mt-1 text-sm sm:text-base">
             Configure system-wide settings and business rules
           </p>
         </div>
       </div>
 
       <form onSubmit={handleSaveSettings}>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 sm:gap-8">
           <Card className="shadow-sm">
             <CardHeader>
               <CardTitle className="flex items-center text-lg">

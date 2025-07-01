@@ -360,9 +360,8 @@ const BranchRooms = ({ branch, onRoomsUpdate }: { branch: Branch; onRoomsUpdate:
                      </Button>
                      <AlertDialog>
                        <AlertDialogTrigger asChild>
-                         <Button variant="destructive" size="sm" className="flex items-center gap-1">
+                         <Button variant="ghost" size="icon" className="h-8 w-8 text-red-600 hover:text-red-700 hover:bg-red-50">
                            <TrashIcon className="h-4 w-4" />
-                           Delete
                          </Button>
                        </AlertDialogTrigger>
                        <AlertDialogContent>
@@ -756,12 +755,12 @@ export default function BranchManager() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold tracking-tight">Branches & Rooms</h1>
+    <div className="space-y-4 sm:space-y-6 px-3 sm:px-0">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Branches & Rooms</h1>
         <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
           <DialogTrigger asChild>
-            <Button className="flex items-center gap-2">
+            <Button className="flex items-center gap-2 w-full sm:w-auto">
               <PlusIcon className="h-5 w-5" /> Add New Branch
             </Button>
           </DialogTrigger>
@@ -773,8 +772,8 @@ export default function BranchManager() {
               </DialogDescription>
             </DialogHeader>
             <form onSubmit={handleSubmitBranch(onSubmit)} className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="col-span-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="sm:col-span-2">
                   <Label htmlFor="name" className="text-sm font-medium text-gray-700">
                     Branch Name *
                   </Label>
@@ -788,7 +787,7 @@ export default function BranchManager() {
                     <p className="text-sm text-red-600 mt-1">{branchErrors.name.message}</p>
                   )}
                 </div>
-                <div className="col-span-2">
+                <div className="sm:col-span-2">
                   <Label htmlFor="address" className="text-sm font-medium text-gray-700">
                     Address *
                   </Label>
@@ -926,8 +925,10 @@ export default function BranchManager() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Button variant="outline" size="sm" onClick={() => toggleRooms(branch.id)} className="flex items-center gap-2">
-                    {expandedBranchId === branch.id ? <EyeSlashIcon className="h-5 w-5" /> : <EyeIcon className="h-5 w-5" />}
+                  <Button variant="outline" size="sm" onClick={() => toggleRooms(branch.id)} className="flex items-center gap-2 transition-all duration-200">
+                    <div className={`transition-transform duration-300 ${expandedBranchId === branch.id ? 'rotate-180' : 'rotate-0'}`}>
+                      {expandedBranchId === branch.id ? <EyeSlashIcon className="h-5 w-5" /> : <EyeIcon className="h-5 w-5" />}
+                    </div>
                     {expandedBranchId === branch.id ? 'Hide Rooms' : 'Show Rooms'}
                   </Button>
                   <EditBranchDialog branch={branch} branches={branches} onUpdate={fetchData} />
@@ -1013,11 +1014,17 @@ export default function BranchManager() {
               </div>
             </CardHeader>
             
-            {expandedBranchId === branch.id && (
+            <div 
+              className="overflow-hidden transition-all duration-300 ease-in-out"
+              style={{
+                maxHeight: expandedBranchId === branch.id ? '2000px' : '0px',
+                opacity: expandedBranchId === branch.id ? 1 : 0
+              }}
+            >
               <div className="p-6 bg-white">
                 <BranchRooms branch={branch} onRoomsUpdate={fetchData} />
               </div>
-            )}
+            </div>
           </Card>
         ))}
       </div>

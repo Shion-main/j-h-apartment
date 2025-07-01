@@ -1185,12 +1185,12 @@ export default function BillingPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6 px-3 sm:px-0">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Billing Management</h1>
-          <p className="text-muted-foreground">
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Billing Management</h1>
+          <p className="text-muted-foreground text-sm sm:text-base">
             Manage room billing status and process tenant payments
           </p>
         </div>
@@ -1199,16 +1199,16 @@ export default function BillingPage() {
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <TabsList className="grid w-full grid-cols-2">
-          <TabsTrigger value="room-status">Room Billing Status</TabsTrigger>
-          <TabsTrigger value="active-bills">Active Bills</TabsTrigger>
+          <TabsTrigger value="room-status" className="text-xs sm:text-sm">Room Billing Status</TabsTrigger>
+          <TabsTrigger value="active-bills" className="text-xs sm:text-sm">Active Bills</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="room-status" className="space-y-6">
+        <TabsContent value="room-status" className="space-y-4 sm:space-y-6">
           {/* Room Status Section */}
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
-              <h2 className="text-2xl font-bold tracking-tight">Room Billing Status</h2>
-              <p className="text-muted-foreground">
+              <h2 className="text-xl sm:text-2xl font-bold tracking-tight">Room Billing Status</h2>
+              <p className="text-muted-foreground text-sm sm:text-base">
                 Overview of tenant billing status and bill generation
               </p>
             </div>

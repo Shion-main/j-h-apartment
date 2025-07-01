@@ -16,7 +16,8 @@ import {
   Menu,
   X,
   User,
-  Loader2
+  Loader2,
+  BarChart3
 } from 'lucide-react';
 
 const navigationItems = [
@@ -43,6 +44,12 @@ const navigationItems = [
     href: '/billing',
     icon: FileText,
     description: 'Bill Generation & Payments'
+  },
+  {
+    name: 'Reports',
+    href: '/reports',
+    icon: BarChart3,
+    description: 'Detailed Financial Reports'
   },
   {
     name: 'History',

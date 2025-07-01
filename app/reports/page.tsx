@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -91,6 +91,13 @@ export default function ReportsPage() {
   const [isSendingEmail, setIsSendingEmail] = useState(false);
   const [reportType, setReportType] = useState<'monthly' | 'yearly'>('monthly');
   
+  // Performance optimization states
+  const [tempSelectedMonth, setTempSelectedMonth] = useState(selectedMonth);
+  const [tempSelectedYear, setTempSelectedYear] = useState(selectedYear);
+  
+  // In-memory cache for reports
+  const reportCache = useMemo(() => new Map<string, ConsolidatedReport>(), []);
+  
   // Comprehensive report state
   const [comprehensiveEmailDialogOpen, setComprehensiveEmailDialogOpen] = useState(false);
   const [comprehensiveEmailAddress, setComprehensiveEmailAddress] = useState('');
@@ -99,18 +106,54 @@ export default function ReportsPage() {
   
   const { toast } = useToast();
 
+  // Debounced month/year selection
   useEffect(() => {
-    fetchConsolidatedReport();
-  }, [selectedMonth]);
+    const timeoutId = setTimeout(() => {
+      if (tempSelectedMonth !== selectedMonth) {
+        setSelectedMonth(tempSelectedMonth);
+      }
+    }, 300); // 300ms debounce
+    
+    return () => clearTimeout(timeoutId);
+  }, [tempSelectedMonth, selectedMonth]);
 
-  const fetchConsolidatedReport = async () => {
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      if (tempSelectedYear !== selectedYear) {
+        setSelectedYear(tempSelectedYear);
+      }
+    }, 300); // 300ms debounce
+    
+    return () => clearTimeout(timeoutId);
+  }, [tempSelectedYear, selectedYear]);
+
+  // Memoized fetch with caching
+  const fetchConsolidatedReport = useCallback(async () => {
+    const cacheKey = `${reportType}-${reportType === 'monthly' ? selectedMonth : selectedYear}`;
+    const cachedReport = reportCache.get(cacheKey);
+    
+    if (cachedReport) {
+      setConsolidatedReport(cachedReport);
+      setIsLoading(false);
+      return;
+    }
+
     setIsLoading(true);
     try {
-      const [year, month] = selectedMonth.split('-');
-      const response = await fetch(`/api/reports/consolidated-json?month=${month}&year=${year}`);
+      let url: string;
+      if (reportType === 'monthly') {
+        const [year, month] = selectedMonth.split('-');
+        url = `/api/reports/consolidated-json?month=${month}&year=${year}`;
+      } else {
+        url = `/api/reports/consolidated-json?year=${selectedYear}`;
+      }
+      
+      const response = await fetch(url);
       if (response.ok) {
         const data = await response.json();
         setConsolidatedReport(data.data);
+        // Cache the result
+        reportCache.set(cacheKey, data.data);
       } else {
         setConsolidatedReport(null);
       }
@@ -119,7 +162,11 @@ export default function ReportsPage() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [selectedMonth, selectedYear, reportType, reportCache]);
+
+  useEffect(() => {
+    fetchConsolidatedReport();
+  }, [fetchConsolidatedReport]);
 
   const fetchComprehensiveReport = async () => {
     try {
@@ -378,22 +425,32 @@ export default function ReportsPage() {
                   <label className="text-sm font-medium text-gray-700 whitespace-nowrap">Select Month:</label>
                   <Input
                     type="month"
-                    value={selectedMonth}
-                    onChange={(e) => setSelectedMonth(e.target.value)}
+                    value={tempSelectedMonth}
+                    onChange={(e) => setTempSelectedMonth(e.target.value)}
                     className="w-full sm:w-48"
                   />
+                  {tempSelectedMonth !== selectedMonth && (
+                    <div className="text-xs text-gray-500 italic">
+                      Loading...
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 w-full">
                   <label className="text-sm font-medium text-gray-700 whitespace-nowrap">Select Year:</label>
                   <Input
                     type="number"
-                    value={selectedYear}
-                    onChange={(e) => setSelectedYear(e.target.value)}
+                    value={tempSelectedYear}
+                    onChange={(e) => setTempSelectedYear(e.target.value)}
                     min="2020"
                     max="2100"
                     className="w-full sm:w-32"
                   />
+                  {tempSelectedYear !== selectedYear && (
+                    <div className="text-xs text-gray-500 italic">
+                      Loading...
+                    </div>
+                  )}
                 </div>
               )}
             </div>
