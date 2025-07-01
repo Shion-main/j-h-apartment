@@ -10,10 +10,13 @@ import {
 import { logBillGeneration } from '@/lib/audit/logger';
 import { EmailService } from '@/lib/services/emailService';
 
+// Force dynamic rendering for this route
+export const dynamic = 'force-dynamic';
+
 export async function GET(request: NextRequest) {
   try {
     const supabase = createRouteHandlerClient({ cookies });
-    const { searchParams } = new URL(request.url);
+    const searchParams = request.nextUrl.searchParams;
     const tenantId = searchParams.get('tenant_id');
     const status = searchParams.get('status');
     const limit = searchParams.get('limit');

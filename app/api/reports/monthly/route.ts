@@ -1,9 +1,12 @@
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 
-export async function GET(request: Request) {
-  const { searchParams } = new URL(request.url);
+// Force dynamic rendering for this route
+export const dynamic = 'force-dynamic';
+
+export async function GET(request: NextRequest) {
+  const searchParams = request.nextUrl.searchParams;
   const month = searchParams.get('month'); // YYYY-MM format
   const download = searchParams.get('download') === 'true';
 

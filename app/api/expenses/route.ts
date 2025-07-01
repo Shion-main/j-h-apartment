@@ -4,10 +4,13 @@ import { cookies } from 'next/headers';
 import { companyExpenseSchema, validateSchema } from '@/lib/validations/schemas';
 import { logExpenseOperation, logAuditEvent } from '@/lib/audit/logger';
 
+// Force dynamic rendering for this route
+export const dynamic = 'force-dynamic';
+
 export async function GET(request: NextRequest) {
   try {
     const supabase = createRouteHandlerClient({ cookies });
-    const { searchParams } = new URL(request.url);
+    const searchParams = request.nextUrl.searchParams;
     
     const month = searchParams.get('month');
     const year = searchParams.get('year');
@@ -286,7 +289,7 @@ export async function PUT(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   try {
     const supabase = createRouteHandlerClient({ cookies });
-    const { searchParams } = new URL(request.url);
+    const searchParams = request.nextUrl.searchParams;
     const id = searchParams.get('id');
 
     // Get current user for audit logging

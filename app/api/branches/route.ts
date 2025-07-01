@@ -4,6 +4,9 @@ import { cookies } from 'next/headers';
 import { branchSchema } from '@/lib/validations/schemas';
 import { logAuditEvent } from '@/lib/audit/logger';
 
+// Force dynamic rendering for this route
+export const dynamic = 'force-dynamic';
+
 export async function GET() {
   try {
     const supabase = createRouteHandlerClient({ cookies });
@@ -146,7 +149,7 @@ export async function POST(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   try {
     const supabase = createRouteHandlerClient({ cookies });
-    const { searchParams } = new URL(request.url);
+    const searchParams = request.nextUrl.searchParams;
     const branchId = searchParams.get('id');
 
     // Get current user for audit logging

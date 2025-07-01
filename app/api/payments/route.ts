@@ -3,6 +3,9 @@ import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 import { paymentRecordSchema, validateSchema } from '@/lib/validations/schemas';
 import { logAuditEvent, getPaymentAction } from '@/lib/audit/logger';
+
+// Force dynamic rendering for this route
+export const dynamic = 'force-dynamic';
 import { EmailService } from '@/lib/services/emailService';
 import { 
   allocatePaymentToComponents, 
@@ -13,7 +16,7 @@ import {
 export async function GET(request: NextRequest) {
   try {
     const supabase = createRouteHandlerClient({ cookies });
-    const { searchParams } = new URL(request.url);
+    const searchParams = request.nextUrl.searchParams;
     const billId = searchParams.get('bill_id');
 
     let query = supabase

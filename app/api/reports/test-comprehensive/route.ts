@@ -1,13 +1,16 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 
-export async function GET(request: Request) {
-  const { searchParams } = new URL(request.url);
+// Force dynamic rendering for this route
+export const dynamic = 'force-dynamic';
+
+export async function GET(request: NextRequest) {
+  const searchParams = request.nextUrl.searchParams;
   const month = searchParams.get('month') || '3';
   const year = searchParams.get('year') || '2025';
 
   try {
     // Test the comprehensive report API endpoint
-    const baseUrl = request.url.split('/api/reports/test-comprehensive')[0];
+    const baseUrl = request.nextUrl.origin;
     
     // Test 1: Fetch comprehensive report data
     console.log(`Testing comprehensive report for ${month}/${year}`);

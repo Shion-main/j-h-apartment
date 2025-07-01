@@ -3,10 +3,13 @@ import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 import { calculatePenalty } from '@/lib/calculations/billing';
 
+// Force dynamic rendering for this route
+export const dynamic = 'force-dynamic';
+
 export async function GET(request: NextRequest) {
   try {
     const supabase = createRouteHandlerClient({ cookies });
-    const { searchParams } = new URL(request.url);
+    const searchParams = request.nextUrl.searchParams;
     const searchTerm = searchParams.get('search') || '';
     const statusFilter = searchParams.get('status') || '';
     const branchFilter = searchParams.get('branch') || '';

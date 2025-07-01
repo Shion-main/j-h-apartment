@@ -6,10 +6,13 @@ import { logTenantMoveIn } from '@/lib/audit/logger';
 import { addMonths } from '@/lib/utils';
 import { EmailService } from '@/lib/services/emailService';
 
+// Force dynamic rendering for this route
+export const dynamic = 'force-dynamic';
+
 export async function GET(request: NextRequest) {
   try {
     const supabase = createRouteHandlerClient({ cookies });
-    const { searchParams } = new URL(request.url);
+    const searchParams = request.nextUrl.searchParams;
     const isActive = searchParams.get('active');
     const status = searchParams.get('status');
 
