@@ -42,6 +42,64 @@ interface MonthlyReport {
   profitLoss: number;
 }
 
+interface ConsolidatedReport {
+  month: string;
+  branches: any[];
+  overallSnapshot: Array<{
+    branch: string;
+    rent: number;
+    electricity: number;
+    water: number;
+    extraFees: number;
+    penalty: number;
+    forfeitedDeposits: number;
+    totalIncome: number;
+    companyExpenses: number;
+    depositsRefunded: number;
+    totalExpenses: number;
+    netProfitLoss: number;
+  }>;
+  tenantRoomStatus: Array<{
+    branch: string;
+    activeTenants: number;
+    vacantRooms: number;
+    newTenants: number;
+    movedOutTenants: number;
+  }>;
+  detailedBilling: Array<{
+    branch: string;
+    tenantName: string;
+    roomNumber: string;
+    billingPeriod: string;
+    dueDate: string;
+    originalTotal: number;
+    totalPaid: number;
+    status: string;
+    paymentDate: string;
+    paymentMethod: string;
+    paymentAmount: number;
+  }>;
+  companyExpenses: Array<{
+    branch: string;
+    expenseDate: string;
+    amount: number;
+    description: string;
+    category: string;
+  }>;
+  tenantMovement: Array<{
+    branch: string;
+    type: string;
+    fullName: string;
+    date: string;
+    roomNumber?: string;
+    advancePayment?: number;
+    securityDeposit?: number;
+    finalBillTotal?: number;
+    depositsUsed?: number;
+    depositsRefunded?: number;
+  }>;
+}
+
 interface DetailedReport {
   month: string;
   period: {
@@ -164,6 +222,7 @@ export default function DashboardPage() {
     return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
   });
   const [monthlyReport, setMonthlyReport] = useState<MonthlyReport | null>(null);
+  const [consolidatedReport, setConsolidatedReport] = useState<ConsolidatedReport | null>(null);
   const [detailedReport, setDetailedReport] = useState<DetailedReport | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingReport, setIsLoadingReport] = useState(false);
@@ -178,29 +237,163 @@ export default function DashboardPage() {
 
   useEffect(() => {
     fetchDashboardStats();
-    if (reportType === 'summary') {
-      fetchMonthlyReport();
-    } else {
-      fetchDetailedReport();
-    }
+    fetchConsolidatedReport();
   }, [selectedMonth, reportType]);
 
-  const fetchMonthlyReport = async () => {
+  const fetchConsolidatedReport = async () => {
     setIsLoadingReport(true);
+    setIsLoadingDetailedReport(true);
     try {
-      const response = await fetch(`/api/reports/monthly?month=${selectedMonth}`, {
-        method: 'GET'
-      });
-
+      const [year, month] = selectedMonth.split('-');
+      const response = await fetch(`/api/reports/consolidated-json?month=${month}&year=${year}`);
+      
       if (response.ok) {
         const data = await response.json();
-        setMonthlyReport(data.data);
-      } else {
-        console.error('Failed to fetch monthly report');
-        setMonthlyReport(null);
+        setConsolidatedReport(data.data);
         
-        // If no data found, suggest checking for available data
-        if (response.status === 200) {
+        // Create summary data compatible with existing monthlyReport interface
+        const totalIncome = data.data.overallSnapshot.reduce((sum: number, branch: any) => sum + branch.totalIncome, 0);
+        const totalExpenses = data.data.overallSnapshot.reduce((sum: number, branch: any) => sum + branch.totalExpenses, 0);
+        const rent = data.data.overallSnapshot.reduce((sum: number, branch: any) => sum + branch.rent, 0);
+        const electricity = data.data.overallSnapshot.reduce((sum: number, branch: any) => sum + branch.electricity, 0);
+        const water = data.data.overallSnapshot.reduce((sum: number, branch: any) => sum + branch.water, 0);
+        const extraFees = data.data.overallSnapshot.reduce((sum: number, branch: any) => sum + branch.extraFees, 0);
+        const penalty = data.data.overallSnapshot.reduce((sum: number, branch: any) => sum + branch.penalty, 0);
+        const forfeitedDeposits = data.data.overallSnapshot.reduce((sum: number, branch: any) => sum + branch.forfeitedDeposits, 0);
+        
+        setMonthlyReport({
+          totalRentCollected: rent,
+          totalElectricityCollected: electricity,
+          totalWaterCollected: water,
+          totalExtraFeesCollected: extraFees,
+          totalPenaltyFeesCollected: penalty,
+          forfeitedDeposits: forfeitedDeposits,
+          totalIncome: totalIncome,
+          totalExpenses: totalExpenses,
+          profitLoss: totalIncome - totalExpenses
+        });
+        
+        // Update detailedReport with compatible data structure
+        setDetailedReport({
+          month: data.data.month,
+          period: {
+            start: `${year}-${month.padStart(2, '0')}-01`,
+            end: new Date(parseInt(year), parseInt(month), 0).toISOString().split('T')[0]
+          },
+          summary: {
+            totalBills: data.data.detailedBilling.length,
+            totalBilled: data.data.detailedBilling.reduce((sum: number, bill: any) => sum + bill.originalTotal, 0),
+            totalCollected: data.data.detailedBilling.reduce((sum: number, bill: any) => sum + bill.totalPaid, 0),
+            totalOutstanding: data.data.detailedBilling.reduce((sum: number, bill: any) => sum + (bill.originalTotal - bill.totalPaid), 0),
+            fullyPaidBills: data.data.detailedBilling.filter((bill: any) => bill.status === 'fully_paid').length,
+            partiallyPaidBills: data.data.detailedBilling.filter((bill: any) => bill.status === 'partially_paid').length,
+            activeBills: data.data.detailedBilling.filter((bill: any) => bill.status === 'active').length,
+            finalBills: 0, // Not available in new API
+            totalExpenses: data.data.overallSnapshot.reduce((sum: number, branch: any) => sum + branch.totalExpenses, 0),
+            newTenants: data.data.tenantRoomStatus.reduce((sum: number, branch: any) => sum + branch.newTenants, 0),
+            movedOutTenants: data.data.tenantRoomStatus.reduce((sum: number, branch: any) => sum + branch.movedOutTenants, 0),
+            activeTenantsAtMonthEnd: data.data.tenantRoomStatus.reduce((sum: number, branch: any) => sum + branch.activeTenants, 0)
+          },
+          branchBreakdown: data.data.branches.map((branch: any) => {
+            const branchSnapshot = data.data.overallSnapshot.find((snap: any) => snap.branch === branch.name) || {};
+            const branchBills = data.data.detailedBilling.filter((bill: any) => bill.branch === branch.name);
+            const branchStatus = data.data.tenantRoomStatus.find((status: any) => status.branch === branch.name) || {};
+            
+            return {
+              name: branch.name,
+              address: branch.address || '',
+              totalBilled: branchBills.reduce((sum: number, bill: any) => sum + bill.originalTotal, 0),
+              totalCollected: branchBills.reduce((sum: number, bill: any) => sum + bill.totalPaid, 0),
+              totalOutstanding: branchBills.reduce((sum: number, bill: any) => sum + (bill.originalTotal - bill.totalPaid), 0),
+              billCount: branchBills.length,
+              fullyPaidCount: branchBills.filter((bill: any) => bill.status === 'fully_paid').length,
+              partiallyPaidCount: branchBills.filter((bill: any) => bill.status === 'partially_paid').length,
+              activeCount: branchBills.filter((bill: any) => bill.status === 'active').length,
+              finalBillCount: 0,
+              collectionRate: branchBills.length > 0 ? (branchBills.reduce((sum: number, bill: any) => sum + bill.totalPaid, 0) / branchBills.reduce((sum: number, bill: any) => sum + bill.originalTotal, 0)) * 100 : 0,
+              incomeBreakdown: {
+                rentCollected: branchSnapshot.rent || 0,
+                electricityCollected: branchSnapshot.electricity || 0,
+                waterCollected: branchSnapshot.water || 0,
+                extraFeesCollected: branchSnapshot.extraFees || 0,
+                penaltyFeesCollected: branchSnapshot.penalty || 0,
+                forfeitedDeposits: branchSnapshot.forfeitedDeposits || 0
+              },
+              detailedBills: branchBills.map((bill: any) => ({
+                tenantName: bill.tenantName,
+                roomNumber: bill.roomNumber,
+                billingPeriod: bill.billingPeriod,
+                dueDate: bill.dueDate,
+                originalTotal: bill.originalTotal,
+                totalPaid: bill.totalPaid,
+                status: bill.status,
+                paymentDate: bill.paymentDate || '',
+                paymentMethod: bill.paymentMethod || '',
+                paymentAmount: bill.paymentAmount || 0
+              }))
+            };
+          }),
+          detailedExpenses: data.data.companyExpenses.map((expense: any) => ({
+            id: Math.random().toString(),
+            expenseDate: expense.expenseDate,
+            amount: expense.amount,
+            description: expense.description,
+            category: expense.category,
+            branchName: expense.branch
+          })),
+          tenantMovements: data.data.tenantMovement.map((movement: any) => ({
+            id: Math.random().toString(),
+            fullName: movement.fullName,
+            rentStartDate: movement.type === 'Move In' ? movement.date : '',
+            moveOutDate: movement.type === 'Move Out' ? movement.date : '',
+            isActive: movement.type === 'Move In',
+            roomNumber: movement.roomNumber || '',
+            branchName: movement.branch,
+            movementType: movement.type
+          })),
+          detailedBills: data.data.detailedBilling.map((bill: any) => ({
+            id: Math.random().toString(),
+            billingPeriod: bill.billingPeriod,
+            dueDate: bill.dueDate,
+            tenantName: bill.tenantName,
+            tenantEmail: '',
+            tenantPhone: '',
+            branchName: bill.branch,
+            roomNumber: bill.roomNumber,
+            monthlyRent: 0, // Not available in new structure
+            electricityAmount: 0, // Not broken down in new structure
+            waterAmount: 0, // Not broken down in new structure
+            extraFee: 0, // Not broken down in new structure
+            extraFeeDescription: '',
+            penaltyAmount: 0, // Not broken down in new structure
+            totalAmountDue: bill.originalTotal,
+            amountPaid: bill.totalPaid,
+            outstandingAmount: bill.originalTotal - bill.totalPaid,
+            status: bill.status,
+            isFinalBill: false,
+            advancePayment: 0,
+            securityDeposit: 0,
+            appliedAdvancePayment: 0,
+            appliedSecurityDeposit: 0,
+            forfeitedAmount: 0,
+            refundAmount: 0,
+            payments: bill.paymentAmount > 0 ? [{
+              id: Math.random().toString(),
+              amount: bill.paymentAmount,
+              paymentDate: bill.paymentDate || '',
+              paymentMethod: bill.paymentMethod || '',
+              notes: '',
+              referenceNumber: ''
+            }] : []
+          }))
+        });
+      } else {
+        console.error('Failed to fetch consolidated report');
+        setConsolidatedReport(null);
+        setMonthlyReport(null);
+        setDetailedReport(null);
+        
+        if (response.status === 404) {
           toast({
             title: "No Data Found",
             description: `No financial data found for ${selectedMonth}. Try selecting a different month or check if bills and payments exist.`,
@@ -209,50 +402,17 @@ export default function DashboardPage() {
         }
       }
     } catch (error) {
-      console.error('Error fetching monthly report:', error);
+      console.error('Error fetching consolidated report:', error);
+      setConsolidatedReport(null);
       setMonthlyReport(null);
+      setDetailedReport(null);
       toast({
         title: "Error",
-        description: "Failed to fetch monthly report. Please try again.",
+        description: "Failed to fetch reports. Please try again.",
         variant: "destructive"
       });
     } finally {
       setIsLoadingReport(false);
-    }
-  };
-
-  const fetchDetailedReport = async () => {
-    setIsLoadingDetailedReport(true);
-    try {
-      const response = await fetch(`/api/reports/detailed?month=${selectedMonth}`, {
-        method: 'GET'
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setDetailedReport(data.data);
-      } else {
-        console.error('Failed to fetch detailed report');
-        setDetailedReport(null);
-        
-        // If no data found, suggest checking for available data
-        if (response.status === 200) {
-          toast({
-            title: "No Data Found",
-            description: `No detailed data found for ${selectedMonth}. Try selecting a different month or check if bills and payments exist.`,
-            variant: "destructive"
-          });
-        }
-      }
-    } catch (error) {
-      console.error('Error fetching detailed report:', error);
-      setDetailedReport(null);
-      toast({
-        title: "Error",
-        description: "Failed to fetch detailed report. Please try again.",
-        variant: "destructive"
-      });
-    } finally {
       setIsLoadingDetailedReport(false);
     }
   };
@@ -276,20 +436,24 @@ export default function DashboardPage() {
         .select('id')
         .eq('is_active', true);
 
-      // Fetch monthly financial data using the new reporting system
-      const [year, month] = selectedMonth.split('-');
-      const response = await fetch(`/api/reports/detailed?month=${month}&year=${year}`, {
-        method: 'GET'
-      });
-
+      // Use consolidated report data for financial stats if available
       let monthlyIncome = 0;
       let monthlyExpenses = 0;
 
-      if (response.ok) {
-        const data = await response.json();
-        if (data.data) {
-          monthlyIncome = data.data.summary.totalCollected;
-          monthlyExpenses = data.data.summary.totalExpenses;
+      if (consolidatedReport) {
+        monthlyIncome = consolidatedReport.overallSnapshot.reduce((sum, branch) => sum + branch.totalIncome, 0);
+        monthlyExpenses = consolidatedReport.overallSnapshot.reduce((sum, branch) => sum + branch.totalExpenses, 0);
+      } else {
+        // Fallback to API call if consolidated report not yet loaded
+        const [year, month] = selectedMonth.split('-');
+        const response = await fetch(`/api/reports/consolidated-json?month=${month}&year=${year}`);
+        
+        if (response.ok) {
+          const data = await response.json();
+          if (data.data) {
+            monthlyIncome = data.data.overallSnapshot.reduce((sum: number, branch: any) => sum + branch.totalIncome, 0);
+            monthlyExpenses = data.data.overallSnapshot.reduce((sum: number, branch: any) => sum + branch.totalExpenses, 0);
+          }
         }
       }
 
@@ -355,7 +519,7 @@ export default function DashboardPage() {
       return;
     }
 
-    if (!monthlyReport) {
+    if (!monthlyReport && !consolidatedReport) {
       toast({
         title: "Error", 
         description: "No report data available for the selected month",
@@ -367,15 +531,17 @@ export default function DashboardPage() {
     setIsSendingEmail(true);
     try {
       const emails = emailAddresses.split(',').map(email => email.trim()).filter(Boolean);
+      const [year, month] = selectedMonth.split('-');
       
-      const response = await fetch('/api/reports/monthly/send-email', {
+      const response = await fetch('/api/reports/consolidated-excel/send-email', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
           emails,
-          month: selectedMonth
+          month: month,
+          year: year
         })
       });
 
@@ -731,8 +897,8 @@ export default function DashboardPage() {
                     variant="outline"
                     size="sm"
                     onClick={() => {
-                      const endpoint = reportType === 'summary' ? 'monthly' : 'detailed';
-                      window.open(`/api/reports/${endpoint}?month=${selectedMonth}&download=true`, '_blank');
+                      const [year, month] = selectedMonth.split('-');
+                      window.open(`/api/reports/consolidated-excel?month=${month}&year=${year}`, '_blank');
                     }}
                     disabled={!monthlyReport && !detailedReport}
                     className="flex items-center space-x-1"
