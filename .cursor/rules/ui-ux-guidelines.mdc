@@ -1,0 +1,150 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# J&H Management System - UI/UX Guidelines
+
+## General Design Principles
+
+### Target Users
+- J&H Management staff (administrators, branch managers, accounting personnel)
+- **NOT** tenant-facing - system is for internal use only
+- Must be intuitive for non-technical staff
+
+### Core UX Requirements
+- **Intuitive Navigation**: Clear menu structure for all system modules
+- **Fast Loading**: Critical pages load within 3 seconds
+- **Clear Visual Hierarchy**: Important actions and information prominently displayed
+- **Consistent Layout**: Standardized component patterns across modules
+
+## Form Design Standards
+
+### Date Inputs
+- **User-friendly date pickers** for all date fields
+- **Editable dates**: present_reading_date and payment_date must be fully editable (not just current date)
+- **Default behavior**: Default to current date but allow backdating/future dating
+- **Clear labeling**: Indicate purpose (e.g., "Present Reading Date", "Payment Date")
+
+### Monetary Fields
+- **PHP Currency Display**: All monetary values clearly marked as Philippine Pesos (₱ or PHP)
+- **Number formatting**: Use appropriate decimal places (2 for currency)
+- **Input validation**: Prevent negative values where inappropriate
+- **Clear calculations**: Show breakdown of bill components, penalties, totals
+
+### Required vs Optional Fields
+- **Visual indicators**: Clear marking of required fields
+- **Smart defaults**: Pre-populate with sensible defaults where possible
+- **Progressive disclosure**: Show additional fields only when needed
+
+## Navigation Structure
+
+### Main Menu Sections
+1. **Dashboard** - Overview metrics, analytics, branch management, and expense tracking
+   - Branch management and room creation integrated directly in dashboard
+   - Company expense tracking and reporting integrated in dashboard
+   - expense operations
+2. **Tenants** - Active tenant list and management
+3. **Billing** - Bill generation and payment recording
+4. **History** - Comprehensive historical data
+   - Fully paid bills
+   - Moved-out tenants
+   - Complete audit trail and system activity logs
+   - Advanced filtering and search capabilities
+5. **Settings** - System configuration and user management
+
+### Breadcrumb Navigation
+- Show current location within system hierarchy
+- Enable quick navigation back to parent sections
+
+## Data Display Patterns
+
+### List Views
+- **Filtering options**: By branch, status, date ranges
+- **Sorting capabilities**: Key columns sortable
+- **Pagination**: For large datasets
+- **Quick actions**: Common actions accessible from list items
+
+### Detail Views
+- **Comprehensive information**: All relevant data for the entity
+- **Action buttons**: Primary actions prominently displayed
+- **Edit capabilities**: In-line editing where appropriate
+- **History tracking**: Show related history (bills for tenants, payments for bills)
+
+## Dashboard Design
+
+### Key Metrics Display
+- **Summary cards**: Total branches, active tenants, room occupancy
+- **Financial overview**: Monthly income, expenses, profit/loss for selected month
+- **Visual indicators**: Color coding for positive/negative values
+- **Quick filters**: Month/year selection for financial data
+
+### Recent Activity
+- **Audit log preview**: Recent system activities
+- **Pending actions**: Tenants needing bills, overdue payments
+- **Quick actions**: Generate reports, send reminders
+
+## Billing Interface
+
+### Bill Generation Form
+- **Tenant selection**: Clear display of tenant and room information
+- **Reading inputs**: Previous reading display, current reading input
+- **Automatic calculations**: Real-time calculation of charges
+- **Extra fees section**: Optional additional charges with descriptions
+- **Review before generate**: Summary of bill components before creation
+
+### Payment Recording
+- **Bill summary**: Show current bill details and balance
+- **Payment fields**: Amount, method, date (editable), notes
+- **Penalty warnings**: Alert if payment date triggers penalty
+- **Receipt generation**: Immediate confirmation of payment recorded
+
+## Move-Out Process Interface
+
+### Two-Phase Design
+- **Phase 1 Interface**: Move-out date selection, final bill calculation preview
+- **Phase 2 Interface**: Final settlement recording and tenant deactivation
+- **Clear progress indicators**: Show which phase user is in
+- **Confirmation dialogs**: Important actions require confirmation
+
+## Error Handling
+
+### Error Messages
+- **Clear language**: Avoid technical jargon
+- **Actionable guidance**: Tell user how to fix the issue
+- **Contextual placement**: Show errors near relevant fields
+- **Success feedback**: Confirm when actions complete successfully
+
+### Validation Patterns
+- **Real-time validation**: Immediate feedback on form fields
+- **Business rule validation**: Check against system rules (deposit amounts, billing cycles)
+- **Data consistency**: Prevent conflicting data entry
+
+## Responsive Design
+
+### Mobile Considerations
+- **Touch-friendly**: Adequate tap targets for mobile devices
+- **Essential functions**: Core functionality accessible on mobile
+- **Simplified layouts**: Streamlined interface for smaller screens
+
+## Performance Indicators
+
+### Loading States
+- **Progress indicators**: Show system is processing
+- **Skeleton screens**: For data-heavy pages
+- **Timeout handling**: Clear messaging for slow operations
+
+### Critical Performance Targets
+- **Dashboard load**: < 3 seconds
+- **Bill generation**: < 2 seconds
+- **Payment recording**: < 2 seconds
+- **Report generation**: < 10 seconds
+
+## Email Interface
+
+### Email Composition
+- **Template previews**: Show email content before sending
+- **Recipient management**: Multiple email addresses for reports
+- **Attachment handling**: CSV reports, bill attachments
+- **Send confirmations**: Verify emails were sent successfully
+

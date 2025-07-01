@@ -1,0 +1,133 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# J&H Management System - Database Design
+
+## Core Entities & Relationships
+
+### Primary Tables
+- **branches** - Branch locations with default rates
+- **rooms** - Individual rental units within branches
+- **tenants** - Tenant information and lease details
+- **bills** - Billing records with calculations
+- **payments** - Payment transactions against bills
+- **company_expenses** - Business expense tracking
+- **audit_logs** - System activity tracking
+
+## Key Entity Patterns
+
+### Branches
+```sql
+- id (PK)
+- name (Branch Name)
+- address
+- monthly_rent_rate (PHP)
+- water_rate (PHP)
+- electricity_rate (PHP)
+- room_number_prefix
+```
+
+### Rooms
+```sql
+- id (PK)
+- branch_id (FK)
+- room_number
+- monthly_rent (PHP, defaults to branch rate)
+- is_occupied (boolean)
+```
+
+### Tenants
+```sql
+- id (PK)
+- room_id (FK, nullable for moved-out tenants)
+- full_name
+- phone_number
+- email_address
+- rent_start_date
+- contract_start_date
+- contract_end_date
+- initial_electricity_reading
+- advance_payment (PHP)
+- security_deposit (PHP)
+- is_active (boolean)
+- move_out_date (nullable)
+```
+
+### Bills
+```sql
+- id (PK)
+- tenant_id (FK)
+- billing_period_start
+- billing_period_end
+- previous_electricity_reading
+- present_electricity_reading
+- present_reading_date (editable)
+- electricity_consumption
+- electricity_amount (PHP)
+- water_amount (PHP)
+- monthly_rent_amount (PHP)
+- extra_fee (PHP)
+- extra_fee_description
+- penalty_fee (PHP)
+- total_amount_due (PHP)
+- amount_paid (PHP)
+- due_date
+- status ('active', 'partially_paid', 'fully_paid', 'refund')
+- is_final_bill (boolean)
+```
+
+### Payments
+```sql
+- id (PK)
+- bill_id (FK)
+- amount_paid (PHP)
+- payment_date (editable)
+- payment_method ('cash', 'gcash')
+- notes
+```
+
+### Audit Logs
+```sql
+- id (PK)
+- user_id (FK)
+- action
+- target_table
+- target_id
+- old_values (JSON for monetary/date changes)
+- new_values (JSON for monetary/date changes)
+- timestamp
+```
+
+## Critical Business Logic
+
+### Billing Cycle Calculation
+- Based on tenant's `rent_start_date`
+- Consistent monthly periods (e.g., 3/17 to 4/16, then 4/17 to 5/16)
+- Due date = billing_period_end + 10 days
+
+### Penalty Calculation
+- Configurable percentage (default 5%) of `total_amount_due` (before penalty)
+- Stored in system settings table for global configuration
+- Applied when payment_date > due_date
+- Only for bills not yet fully paid
+- Setting changes affect future penalty calculations only
+
+### Deposit Rules (Move-Out)
+- **5+ fully paid bills** (6th cycle or beyond): Both advance payment and security deposit available for outstanding balances
+- **4 or fewer fully paid bills** (5th cycle or below): Only advance payment available, security deposit forfeited
+
+### Final Bill Calculation
+- Prorated monthly rent based on days occupied
+- Final electricity reading and consumption
+- Final water charges (editable)
+- Extra fees (editable)
+- All outstanding bill balances
+- Deposit application based on cycle rules
+
+
+
+
+
+

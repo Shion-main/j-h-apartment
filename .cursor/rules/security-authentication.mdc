@@ -1,0 +1,237 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# J&H Management System - Security & Authentication
+
+## Authentication System
+
+### Authentication Provider
+- **Primary**: Supabase Auth
+- **Method**: Username/password authentication
+- **Password Security**: Bcrypt hashing with salt
+- **Session Management**: JWT tokens with automatic refresh
+
+### User Account Management (FR-AUTH-001 to FR-AUTH-003)
+
+#### User Registration/Creation
+- Admin-controlled user creation (no self-registration)
+- Required fields: username, email, password, role
+- Email verification for new accounts
+- Strong password requirements enforcement
+
+#### User Profile Management
+- Users can update: username, email address, password
+- Email change requires verification
+- Password change requires current password confirmation
+- Profile audit logging for security tracking
+
+### Role-Based Access Control (FR-AUTH-002)
+
+#### User Roles Structure
+```sql
+roles:
+- super_admin: Full system access
+- admin: Most operations, limited settings access
+- branch_manager: Branch-specific operations
+- accountant: Financial data access, limited modifications
+- staff: Basic operations, read-mostly access
+```
+
+#### Permission Matrix
+- **Super Admin**: All CRUD operations, system settings, user management
+- **Admin**: Tenant management, billing, expenses, reports (no user management)
+- **Branch Manager**: Limited to assigned branch operations
+- **Accountant**: Financial reports, expense management, payment recording
+- **Staff**: View-only access, basic data entry
+
+## Row-Level Security (RLS)
+
+### Supabase RLS Implementation
+- Enable RLS on all sensitive tables
+- Policy-based access control
+- User context awareness
+- Branch-specific data isolation where applicable
+
+### RLS Policy Examples
+```sql
+-- Example: Branch managers can only access their branch data
+CREATE POLICY branch_manager_access ON rooms
+  FOR ALL USING (
+    auth.jwt() ->> 'role' = 'super_admin' OR
+    auth.jwt() ->> 'role' = 'admin' OR
+    (auth.jwt() ->> 'role' = 'branch_manager' AND 
+     branch_id = auth.jwt() ->> 'assigned_branch_id')
+  );
+```
+
+## Data Security Requirements
+
+### Encryption Standards (NFR-SEC-003)
+- **In Transit**: HTTPS/TLS 1.3 for all communications
+- **At Rest**: Database encryption via Supabase
+- **Sensitive Data**: Additional encryption for PII where required
+- **API Communications**: Encrypted request/response payloads
+
+### Environment Variables (NFR-SEC-004)
+```bash
+# Required secure environment variables
+SMTP_HOST=
+SMTP_PORT=
+SMTP_USERNAME=
+SMTP_PASSWORD=
+DATABASE_URL=
+SUPABASE_ANON_KEY=
+SUPABASE_SERVICE_ROLE_KEY=
+JWT_SECRET=
+```
+
+### Security Headers
+```javascript
+// Required HTTP security headers
+{
+  "Content-Security-Policy": "default-src 'self'",
+  "X-Frame-Options": "DENY",
+  "X-Content-Type-Options": "nosniff",
+  "Referrer-Policy": "strict-origin-when-cross-origin",
+  "Permissions-Policy": "geolocation=(), microphone=(), camera=()"
+}
+```
+
+## Input Validation & Sanitization
+
+### SQL Injection Prevention (NFR-SEC-005)
+- Use Supabase client parameterized queries
+- Never concatenate user input into SQL strings
+- Input validation at API boundaries
+- Type checking and sanitization
+
+### XSS Prevention
+- HTML entity encoding for user-generated content
+- CSP headers to restrict script execution
+- Input sanitization for all form fields
+- Output encoding in templates
+
+### Input Validation Patterns
+```javascript
+// Example validation schemas
+const tenantSchema = {
+  full_name: Joi.string().min(2).max(100).required(),
+  email_address: Joi.string().email().required(),
+  phone_number: Joi.string().pattern(/^[0-9+\-\s()]+$/),
+  monthly_rent: Joi.number().positive().precision(2)
+};
+```
+
+## Session Management
+
+### JWT Token Security
+- Short-lived access tokens (15 minutes)
+- Refresh token rotation
+- Secure token storage (httpOnly cookies)
+- Token blacklist for logout
+
+### Session Policies
+- Automatic logout after inactivity
+- Single session per user (optional)
+- Device/location tracking for suspicious activity
+- Password change forces re-authentication
+
+## Audit & Monitoring
+
+### Security Event Logging
+- Authentication attempts (success/failure)
+- Permission elevation attempts
+- Sensitive data access
+- Configuration changes
+- Failed authorization attempts
+
+### Monitoring Alerts
+- Multiple failed login attempts
+- Unusual access patterns
+- Privilege escalation attempts
+- Data export activities
+- After-hours system access
+
+## API Security
+
+### Rate Limiting
+- Login attempt rate limiting (5 attempts per 15 minutes)
+- API endpoint rate limiting
+- IP-based restrictions for admin functions
+- CAPTCHA for repeated failures
+
+### API Authentication
+```javascript
+// Example API security middleware
+async function authenticateRequest(req, res, next) {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  const { user, error } = await supabase.auth.getUser(token);
+  
+  if (error || !user) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  
+  req.user = user;
+  next();
+}
+```
+
+## Data Privacy & GDPR Considerations
+
+### Personal Data Handling
+- Minimal data collection principle
+- Clear data retention policies
+- User consent for data processing
+- Right to data portability
+- Right to erasure (with business constraints)
+
+### Financial Data Security
+- PCI DSS compliance considerations
+- Secure payment method storage
+- Financial data access logging
+- Regular security audits
+
+## Backup & Recovery Security
+
+### Backup Encryption
+- Encrypted database backups
+- Secure backup storage (Supabase managed)
+- Access controls on backup systems
+- Regular restore testing
+
+### Disaster Recovery
+- Documented recovery procedures
+- RTO/RPO targets defined
+- Regular disaster recovery testing
+- Security controls in recovery environment
+
+## Development Security
+
+### Code Security Practices
+- Regular dependency vulnerability scanning
+- Static code analysis
+- Security code reviews
+- Environment separation (dev/staging/prod)
+
+### Deployment Security
+- Automated security testing in CI/CD
+- Environment variable validation
+- Secure deployment pipelines
+- Post-deployment security verification
+
+## Compliance Requirements
+
+### Internal Compliance
+- Regular security assessments
+- User access reviews (quarterly)
+- Security policy documentation
+- Staff security training
+
+### External Compliance
+- Industry best practices adherence
+- Regular penetration testing (annually)
+- Third-party security assessments
+- Compliance documentation maintenance
+

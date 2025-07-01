@@ -1,0 +1,64 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# J&H Management System - Architecture & Tech Stack
+
+## Overview
+The J&H Management System is a web-based rental property management application designed for J&H Management staff (tenants do NOT have direct access).
+
+## Technology Stack
+- **Frontend**: Next.js 14+ (React-based web application)
+  - React Server Components (RSC) for optimal performance
+  - Streaming SSR and Partial Prerendering
+  - Edge Runtime for API routes
+  - Server Actions for form handling
+- **Backend**: Supabase Enterprise
+  - Database: PostgreSQL 15+ with Row-Level Security (RLS)
+  - Redis caching for high-performance data access
+  - Authentication: Supabase Auth with JWT
+  - Serverless Functions: Supabase Edge Functions (Deno runtime)
+  - Real-time subscriptions for live updates
+  - Point-in-time recovery and automated backups
+- **Email Service**: Nodemailer within Supabase Edge Functions
+- **Currency**: All monetary values in Philippine Pesos (PHP)
+- **Performance Features**:
+  - HTTP/2 and compression enabled
+  - Edge caching for static assets
+  - Materialized views for complex queries
+  - Cursor-based pagination
+  - Optimistic updates for better UX
+
+## Core System Modules
+1. **Authentication & Authorization** - User account management with role-based access
+2. **Dashboard & Analytics** - Business metrics, financial reporting, audit logs
+3. **Branch Management** - Multi-branch operations with default rates
+4. **Room Management** - Individual room tracking and occupancy status
+5. **Tenant Management** - Move-in, move-out, contract renewal processes
+6. **Billing System** - Automated billing cycles with flexible calculations
+7. **Payment Processing** - Payment recording with penalty calculations
+8. **Company Expenses** - Manual expense tracking and categorization
+9. **Email Notifications** - Automated tenant communications
+10. **History & Audit** - Comprehensive tracking and audit trails
+
+## Key Business Rules
+- **Billing Cycles**: Consistent monthly cycles based on tenant's rent_start_date
+- **Contract Terms**: Default 6-month contracts with renewal options
+- **Deposit Rules**: Different rules for tenants with 5+ vs 4 or fewer fully paid bills
+- **Penalty System**: Configurable penalty percentage (default 5%) for payments more than 10 days after due date
+- **Move-Out Process**: Two-phase process with final bill calculation and settlement
+
+## Security Requirements
+- HTTPS/SSL encryption for all communications
+- Row-Level Security (RLS) implementation
+- Environment variables for sensitive data (SMTP credentials)
+- Protection against SQL injection and XSS
+- Role-based access control
+
+
+
+
+
+
+

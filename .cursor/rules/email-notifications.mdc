@@ -1,0 +1,211 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# J&H Management System - Email Notification System
+
+## Email Infrastructure
+
+### Technical Stack
+- **Service**: Nodemailer within Supabase Edge Functions
+- **Runtime**: Deno environment
+- **Triggers**: Automated based on system events
+- **Configuration**: SMTP credentials stored as environment variables
+
+### Security Requirements
+- SMTP credentials stored securely in environment variables
+- Never expose email configuration client-side
+- Use secure SMTP connections (TLS/SSL)
+
+## Automated Email Triggers
+
+### 1. Welcome Email (FR-EMAIL-001)
+- **Trigger**: After tenant move-in process completion
+- **Recipient**: New tenant
+- **Content**: 
+  - Welcome message
+  - Lease details (room, branch, contract dates)
+  - Contact information for management
+  - Important policies and procedures
+
+### 2. Bill Generated Email (FR-EMAIL-002)
+- **Trigger**: After bill generation
+- **Recipient**: Tenant associated with the bill
+- **Content**:
+  - Detailed bill breakdown (rent, electricity, water, extra fees)
+  - Billing period dates
+  - Due date
+  - Payment instructions
+  - Total amount due
+
+### 3. Bill Edited Email (FR-EMAIL-003)
+- **Trigger**: When existing bill details are modified
+- **Recipient**: Tenant associated with the bill
+- **Content**:
+  - Updated bill details
+  - Explanation of changes
+  - New total amount due
+  - Updated due date if applicable
+
+### 4. Partial Payment Confirmation (FR-EMAIL-004)
+- **Trigger**: After partial payment recording
+- **Recipient**: Tenant who made payment
+- **Content**:
+  - Payment confirmation details (amount, date, method)
+  - Remaining balance
+  - Next payment due date
+
+### 5. Full Payment Receipt (FR-EMAIL-005)
+- **Trigger**: When bill reaches 'fully_paid' status
+- **Recipient**: Tenant who completed payment
+- **Content**:
+  - Payment completion confirmation
+  - Receipt details
+  - "Paid in Full" status
+  - Next billing cycle information
+
+### 6. Final Bill Email (FR-EMAIL-007)
+- **Trigger**: During move-out Phase 1, when tenant owes money
+- **Recipient**: Moving-out tenant
+- **Content**:
+  - Final consolidated bill breakdown
+  - Deposit application details
+  - Outstanding balance owed
+  - Payment deadline and instructions
+
+### 7. Refund Information Email (FR-EMAIL-006)
+- **Trigger**: During move-out Phase 1, when tenant is owed refund
+- **Recipient**: Moving-out tenant
+- **Content**:
+  - Final bill calculation
+  - Deposit application breakdown
+  - Refund amount details
+  - Refund process timeline
+
+### 8. Daily Admin Reminders (FR-EMAIL-008)
+- **Trigger**: Daily automated check (3 days before billing cycle end)
+- **Recipient**: System administrators
+- **Content**:
+  - List of tenants requiring bill generation
+  - Billing cycle end dates
+  - Pending billing actions
+
+## Email Template Structure
+
+### Standard Email Components
+1. **Header**: J&H Management branding and logo
+2. **Greeting**: Personalized with tenant name
+3. **Main Content**: Specific to email type
+4. **Footer**: Contact information, unsubscribe options
+5. **Attachments**: PDF bills, CSV reports where applicable
+
+### Data Requirements for Templates
+```javascript
+// Example data structure for bill email
+{
+  tenant: {
+    full_name: string,
+    email_address: string,
+    room_number: string,
+    branch_name: string
+  },
+  bill: {
+    billing_period_start: date,
+    billing_period_end: date,
+    monthly_rent_amount: number,
+    electricity_amount: number,
+    water_amount: number,
+    extra_fee: number,
+    extra_fee_description: string,
+    total_amount_due: number,
+    due_date: date
+  }
+}
+```
+
+## Report Email System (FR-DASH-003)
+
+### Monthly Report Generation
+- **Trigger**: Manual - Dashboard "Send Report" button
+- **Recipient**: User-specified email addresses (multiple allowed)
+- **Content**:
+  - Monthly financial summary
+  - CSV attachment with detailed data
+  - Selected month/year in subject line
+
+### CSV Report Format
+```csv
+Type,Description,Amount (PHP),Date
+Income,Total Rent Collected,50000.00,2025-03
+Income,Total Electricity Charges,15000.00,2025-03
+Income,Total Water Charges,5000.00,2025-03
+Income,Total Extra Fees,2000.00,2025-03
+Income,Total Penalty Fees,1500.00,2025-03
+Income,Forfeited Deposits,3000.00,2025-03
+Expense,Office Supplies,2500.00,2025-03
+Expense,Utilities,8000.00,2025-03
+```
+
+## Edge Function Implementation Patterns
+
+### Email Function Structure
+```javascript
+// Supabase Edge Function pattern
+export async function sendEmail(emailType, recipientData, templateData) {
+  // Configure Nodemailer with environment variables
+  // Select appropriate email template
+  // Populate template with data
+  // Send email and log result
+  // Return success/failure status
+}
+```
+
+### Email Templates
+- Store templates in Edge Function assets or external storage
+- Support for both HTML and plain text versions
+- Dynamic content insertion using template engines
+- Responsive design for mobile email clients
+
+## Error Handling
+
+### Delivery Failures
+- Log email send attempts and results
+- Retry logic for temporary failures
+- Admin notification for persistent failures
+- Fallback communication methods
+
+### Template Errors
+- Validate template data before sending
+- Graceful degradation for missing data
+- Error logging for debugging
+- Default templates for critical communications
+
+## Compliance & Best Practices
+
+### Email Best Practices
+- Clear, professional subject lines
+- Mobile-friendly responsive design
+- Unsubscribe options where required
+- Spam-compliant content formatting
+
+### Data Privacy
+- Only send emails to verified tenant addresses
+- Secure transmission of sensitive financial data
+- Audit logging of email activities
+- Retention policies for email logs
+
+## Testing & Monitoring
+
+### Email Testing
+- Development environment test addresses
+- Template rendering verification
+- Link and attachment testing
+- Cross-client compatibility
+
+### Monitoring
+- Email delivery success rates
+- Bounce and error tracking
+- Performance monitoring (send times)
+- User engagement metrics where appropriate
+

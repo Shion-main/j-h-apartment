@@ -1,0 +1,136 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# J&H Management System - Business Logic Rules
+
+## Tenant Management Business Rules
+
+### Move-In Process
+1. **Advance Payment** = Room's monthly rent (PHP)
+2. **Security Deposit** = Room's monthly rent (PHP)
+3. **Contract Duration** = 6 months from rent_start_date
+4. **Initial Setup**: Record initial_electricity_reading, set tenant as active, mark room as occupied
+
+### Move-Out Process (Two-Phase)
+
+#### Phase 1: Calculate Final Balance
+- Confirm move_out_date
+- Calculate **Final Consolidated Bill**:
+  - **Prorated Rent**: (room.monthly_rent ÷ total_days_in_cycle) × days_occupied_in_current_cycle
+  - **Electricity Charges**: (present_electricity_reading - previous_reading) × branch.electricity_rate
+  - **Water Charges**: Editable amount for final period
+  - **Extra Fees**: Editable amount and description
+  - **Outstanding Bills**: Sum of all active/partially paid bills
+- Apply **Deposit Rules** based on fully paid bill count (5+ bills = both deposits available, 4 or fewer = security deposit forfeited)
+- Create final bill with is_final_bill = true
+- Send appropriate email (final bill or refund notification)
+
+#### Phase 2: Settlement & Deactivation
+- Record payment or refund against final bill
+- When final bill reaches 'fully_paid' status:
+  - Set tenant.is_active = false
+  - Set tenant.room_id = NULL
+  - Set room.is_occupied = false
+
+## Billing Calculations
+
+### Billing Cycle Determination
+```javascript
+// Example: rent_start_date = 2025-03-17
+// Cycle 1: 2025-03-17 to 2025-04-16
+// Cycle 2: 2025-04-17 to 2025-05-16
+// Cycle 3: 2025-05-17 to 2025-06-16
+```
+
+### Bill Components
+1. **Monthly Rent**: Use room's specific monthly_rent (may differ from branch default)
+2. **Electricity**: (present_reading - previous_reading) × branch.electricity_rate
+3. **Water**: Fixed branch.water_rate
+4. **Extra Fees**: Editable amount + description
+5. **Total Before Penalty**: Sum of above
+6. **Due Date**: billing_period_end + 10 days
+
+### Penalty System
+- **Trigger**: payment_date > due_date AND bill not fully paid
+- **Amount**: Configurable percentage (default 5%) of total_amount_due (before penalty)
+- **Configuration**: Admins can modify penalty percentage globally via Settings (FR-SETT-002)
+- **Application**: Add to total_amount_due, update bill status
+- **Note**: Penalty percentage changes affect only FUTURE calculations, not existing bills
+
+### Payment Status Logic
+- **Active**: Newly generated, no payments
+- **Partially Paid**: 0 < amount_paid < total_amount_due
+- **Fully Paid**: amount_paid ≥ total_amount_due
+- **Refund**: For final bills where tenant deposit exceeds balance
+
+## Deposit Rules on Move-Out
+
+### Cycle Count Determination
+Count bills with status = 'fully_paid' for the tenant
+
+### Rule Application
+- **5+ Fully Paid Bills** (6th cycle or beyond): 
+  - Available: advance_payment + security_deposit
+  - Apply to: outstanding balance
+  - Refund: remaining amount if any
+- **4 or Fewer Fully Paid Bills** (5th cycle or below):
+  - Available: advance_payment only
+  - Forfeited: security_deposit (becomes company income)
+  - Apply: advance_payment to outstanding balance
+  - Refund: remaining advance_payment if any
+
+## Financial Reporting Logic
+
+### Monthly Income Calculation
+- **Rent Collected**: Sum of rent payments for the month
+- **Electricity Collected**: Sum of electricity payments for the month
+- **Water Collected**: Sum of water payments for the month
+- **Extra Fees Collected**: Sum of extra fee payments for the month
+- **Penalty Fees Collected**: Sum of penalty payments for the month
+- **Forfeited Deposits**: Security deposits from tenants with < 6 cycles who moved out
+
+### Monthly Expenses
+- Sum of all company_expenses for the selected month
+
+### Profit/Loss
+- **Profit/Loss** = Total Monthly Income - Total Monthly Expenses
+
+## Email Trigger Rules
+
+### Automatic Triggers
+1. **Welcome Email**: After tenant move-in
+2. **Bill Email**: After bill generation
+3. **Edited Bill Email**: After bill modification
+4. **Partial Payment Email**: After partial payment recording
+5. **Full Payment Receipt**: After bill reaches fully_paid status
+6. **Final Bill Email**: For move-out with balance due
+7. **Refund Notice**: For move-out with refund due
+8. **Daily Reminders**: 3 days before billing cycle end for each active tenant
+
+## Audit Requirements
+
+### Mandatory Logging Actions
+- User authentication events
+- Tenant move-in/move-out
+- Bill generation and modifications
+- Payment recording
+- Settings changes (rates, penalty percentage)
+- Company expense CRUD operations
+
+### Critical Value Tracking
+For monetary amounts and dates, log both old_values and new_values:
+- present_reading_date
+- payment_date
+- monthly_rent rates
+- electricity_rate, water_rate
+- **penalty_percentage** (critical for audit - changes affect all future penalty calculations)
+- present_electricity_reading
+- extra_fee amounts
+- payment amounts
+- expense amounts
+
+
+
+

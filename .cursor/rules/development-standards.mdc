@@ -1,0 +1,420 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# J&H Management System - Development Standards
+
+## Code Organization & Structure
+
+### Next.js Project Structure
+```
+j-h-apartment-management/
+├── app/                    # Next.js 14+ App Router with Server Components
+│   ├── (auth)/            # Auth group routes
+│   ├── dashboard/         # Dashboard, branch & expense management
+│   │   ├── branches/     # Branch management components
+│   │   └── expenses/     # Expense tracking components
+│   ├── tenants/          # Tenant management
+│   ├── billing/          # Billing system
+│   ├── history/          # Historical data & audit logs
+│   ├── settings/         # System settings
+│   └── api/              # API routes
+├── components/            # Reusable React components
+│   ├── ui/               # Base UI components
+│   ├── forms/            # Form components
+│   ├── tables/           # Data table components
+│   └── layout/           # Layout components
+├── lib/                  # Utility functions
+│   ├── supabase/         # Supabase client and utilities
+│   ├── validations/      # Joi/Zod validation schemas
+│   ├── calculations/     # Business logic calculations
+│   └── utils/            # General utilities
+├── hooks/                # Custom React hooks
+├── types/                # TypeScript type definitions
+├── supabase/             # Database migrations and functions
+│   ├── migrations/       # SQL migration files
+│   └── functions/        # Edge functions
+└── public/               # Static assets
+```
+
+### Component Naming Conventions
+- **PascalCase** for component files: `TenantList.tsx`, `BillGenerator.tsx`
+- **camelCase** for utility functions: `calculateBill()`, `validatePayment()`
+- **kebab-case** for route segments: `/billing/generate-bill`
+- **UPPER_SNAKE_CASE** for constants: `PENALTY_PERCENTAGE`, `DEFAULT_CONTRACT_MONTHS`
+
+## TypeScript Standards
+
+### Type Definitions
+```typescript
+// Core entity types
+interface Tenant {
+  id: string;
+  room_id: string | null;
+  full_name: string;
+  email_address: string;
+  phone_number: string;
+  rent_start_date: string;
+  contract_start_date: string;
+  contract_end_date: string;
+  initial_electricity_reading: number;
+  advance_payment: number; // PHP
+  security_deposit: number; // PHP
+  is_active: boolean;
+  move_out_date: string | null;
+}
+
+interface Bill {
+  id: string;
+  tenant_id: string;
+  billing_period_start: string;
+  billing_period_end: string;
+  monthly_rent_amount: number; // PHP
+  electricity_amount: number; // PHP
+  water_amount: number; // PHP
+  extra_fee: number; // PHP
+  penalty_fee: number; // PHP
+  total_amount_due: number; // PHP
+  amount_paid: number; // PHP
+  status: 'active' | 'partially_paid' | 'fully_paid' | 'refund';
+  is_final_bill: boolean;
+}
+```
+
+### Error Handling Types
+```typescript
+type ApiResponse<T> = {
+  data: T | null;
+  error: string | null;
+  success: boolean;
+};
+
+type ValidationError = {
+  field: string;
+  message: string;
+};
+```
+
+## Business Logic Implementation
+
+### Calculation Functions
+```typescript
+// lib/calculations/billing.ts
+export function calculateElectricityCharge(
+  presentReading: number,
+  previousReading: number,
+  rate: number
+): number {
+  const consumption = presentReading - previousReading;
+  return consumption * rate;
+}
+
+export function calculatePenalty(
+  totalAmount: number,
+  paymentDate: Date,
+  dueDate: Date,
+  penaltyPercentage: number // Retrieved from system settings, not hardcoded
+): number {
+  if (paymentDate <= dueDate) return 0;
+  return (totalAmount * penaltyPercentage) / 100;
+}
+
+export function calculateBillingPeriod(
+  rentStartDate: Date,
+  cycleNumber: number
+): { start: Date; end: Date } {
+  // Implementation of consistent monthly billing cycles
+}
+```
+
+### Deposit Rules Implementation
+```typescript
+// lib/calculations/deposits.ts
+export function calculateDepositApplication(
+  tenantId: string,
+  fullyPaidBillCount: number,
+  advancePayment: number,
+  securityDeposit: number,
+  outstandingBalance: number
+): {
+  availableAmount: number;
+  forfeitedAmount: number;
+  refundAmount: number;
+} {
+  if (fullyPaidBillCount >= 5) { // 5+ fully paid bills = 6th cycle or beyond
+    const availableAmount = advancePayment + securityDeposit;
+    const appliedAmount = Math.min(availableAmount, outstandingBalance);
+    return {
+      availableAmount,
+      forfeitedAmount: 0,
+      refundAmount: availableAmount - appliedAmount
+    };
+  } else { // 4 or fewer fully paid bills = 5th cycle or below
+    const appliedAmount = Math.min(advancePayment, outstandingBalance);
+    return {
+      availableAmount: advancePayment,
+      forfeitedAmount: securityDeposit,
+      refundAmount: advancePayment - appliedAmount
+    };
+  }
+}
+```
+
+## Database Interaction Patterns
+
+### Supabase Client Usage
+```typescript
+// lib/supabase/client.ts
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
+
+export const supabase = createClientComponentClient();
+
+// Typed query example
+export async function getTenantBills(tenantId: string): Promise<Bill[]> {
+  const { data, error } = await supabase
+    .from('bills')
+    .select('*')
+    .eq('tenant_id', tenantId)
+    .order('billing_period_start', { ascending: false });
+
+  if (error) throw new Error(error.message);
+  return data || [];
+}
+```
+
+### Audit Logging Pattern
+```typescript
+// lib/audit/logger.ts
+export async function logAuditEvent(
+  userId: string,
+  action: string,
+  targetTable: string,
+  targetId: string,
+  oldValues?: any,
+  newValues?: any
+) {
+  await supabase.from('audit_logs').insert({
+    user_id: userId,
+    action,
+    target_table: targetTable,
+    target_id: targetId,
+    old_values: oldValues,
+    new_values: newValues,
+    timestamp: new Date().toISOString()
+  });
+}
+```
+
+## Form Validation Standards
+
+### Validation Schema Patterns
+```typescript
+// lib/validations/tenant.ts
+import Joi from 'joi';
+
+export const tenantMoveInSchema = Joi.object({
+  full_name: Joi.string().min(2).max(100).required(),
+  email_address: Joi.string().email().required(),
+  phone_number: Joi.string().pattern(/^[0-9+\-\s()]+$/).required(),
+  room_id: Joi.string().uuid().required(),
+  rent_start_date: Joi.date().required(),
+  initial_electricity_reading: Joi.number().min(0).required()
+});
+
+export const billGenerationSchema = Joi.object({
+  tenant_id: Joi.string().uuid().required(),
+  present_electricity_reading: Joi.number().min(0).required(),
+  present_reading_date: Joi.date().required(),
+  extra_fee: Joi.number().min(0).default(0),
+  extra_fee_description: Joi.string().optional()
+});
+```
+
+## API Route Standards
+
+### Error Handling Middleware
+```typescript
+// lib/middleware/error-handler.ts
+export function withErrorHandling(handler: any) {
+  return async (req: Request, res: Response) => {
+    try {
+      return await handler(req, res);
+    } catch (error) {
+      console.error('API Error:', error);
+      return res.status(500).json({
+        error: 'Internal server error',
+        success: false
+      });
+    }
+  };
+}
+```
+
+### API Response Patterns
+```typescript
+// app/api/tenants/route.ts
+export async function POST(request: Request) {
+  try {
+    const body = await request.json();
+    const { error, value } = tenantMoveInSchema.validate(body);
+    
+    if (error) {
+      return Response.json({
+        error: error.details[0].message,
+        success: false
+      }, { status: 400 });
+    }
+
+    // Business logic here
+    const tenant = await createTenant(value);
+
+    return Response.json({
+      data: tenant,
+      success: true
+    });
+  } catch (error) {
+    return Response.json({
+      error: 'Failed to create tenant',
+      success: false
+    }, { status: 500 });
+  }
+}
+```
+
+## Email Function Standards
+
+### Edge Function Structure
+```typescript
+// supabase/functions/send-email/index.ts
+import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
+import nodemailer from 'npm:nodemailer';
+
+serve(async (req) => {
+  try {
+    const { emailType, recipientData, templateData } = await req.json();
+    
+    const transporter = nodemailer.createTransporter({
+      host: Deno.env.get('SMTP_HOST'),
+      port: parseInt(Deno.env.get('SMTP_PORT') || '587'),
+      auth: {
+        user: Deno.env.get('SMTP_USERNAME'),
+        pass: Deno.env.get('SMTP_PASSWORD')
+      }
+    });
+
+    const emailContent = await generateEmailContent(emailType, templateData);
+    
+    await transporter.sendMail({
+      from: Deno.env.get('FROM_EMAIL'),
+      to: recipientData.email,
+      subject: emailContent.subject,
+      html: emailContent.html
+    });
+
+    return new Response(JSON.stringify({ success: true }));
+  } catch (error) {
+    return new Response(JSON.stringify({ error: error.message }), {
+      status: 500
+    });
+  }
+});
+```
+
+## Performance Standards
+
+### Server-Side Rendering & Performance
+- Use Next.js 14+ Server Components for optimal performance
+- Implement React Server Components (RSC) for data-heavy components
+- Utilize Streaming SSR for faster Time to First Byte (TTFB)
+- Implement Partial Prerendering (PPR) for static content
+- Use Suspense boundaries strategically for loading states
+- Enable Edge Runtime for API routes where possible
+
+### Database Query Optimization
+- Use appropriate indexes on frequently queried columns
+- Implement pagination with cursor-based navigation
+- Use RLS policies efficiently with optimized policy conditions
+- Implement Redis caching for frequently accessed data
+- Use materialized views for complex aggregations
+- Optimize Supabase realtime subscriptions
+
+### Frontend Performance
+- Implement React Server Components by default
+- Use Client Components only when necessary (interactivity)
+- Implement proper loading and error boundaries
+- Use Image component with automatic optimization
+- Enable HTTP/2 and compression
+- Implement progressive enhancement
+- Use dynamic imports for large third-party libraries
+- Optimize and lazy load below-the-fold content
+- Implement infinite scroll with virtualization
+- Use optimistic updates for better UX
+
+### Caching Strategy
+- Implement stale-while-revalidate pattern
+- Use React Cache for server-side data fetching
+- Implement HTTP caching headers
+- Use edge caching for static assets
+- Cache expensive calculations server-side
+
+## Testing Standards
+
+### Unit Test Patterns
+```typescript
+// __tests__/calculations/billing.test.ts
+import { calculateElectricityCharge, calculatePenalty } from '@/lib/calculations/billing';
+
+describe('Billing Calculations', () => {
+  test('calculates electricity charge correctly', () => {
+    const charge = calculateElectricityCharge(150, 100, 10);
+    expect(charge).toBe(500); // (150-100) * 10
+  });
+
+  test('calculates penalty for late payment', () => {
+    const paymentDate = new Date('2025-01-20');
+    const dueDate = new Date('2025-01-10');
+    const penalty = calculatePenalty(1000, paymentDate, dueDate, 5);
+    expect(penalty).toBe(50); // 5% of 1000
+  });
+});
+```
+
+## Code Quality Standards
+
+### ESLint Configuration
+```json
+{
+  "extends": ["next/core-web-vitals", "@typescript-eslint/recommended"],
+  "rules": {
+    "no-console": "warn",
+    "@typescript-eslint/no-unused-vars": "error",
+    "prefer-const": "error",
+    "no-var": "error"
+  }
+}
+```
+
+### Pre-commit Hooks
+- ESLint for code quality
+- Prettier for code formatting
+- TypeScript type checking
+- Unit test execution
+
+## Documentation Standards
+
+### Code Documentation
+- JSDoc comments for complex functions
+- README files for major modules
+- API documentation for public endpoints
+- Database schema documentation
+
+### Inline Comments
+- Explain business logic, not obvious code
+- Document why, not what
+- Include references to BRD requirements
+- Explain complex calculations and formulas
+
+
+
+
