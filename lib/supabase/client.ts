@@ -1,7 +1,18 @@
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import type { Database } from '@/types/database';
 
-export const supabase = createClientComponentClient<Database>();
+// Singleton instance to prevent multiple client creations
+let supabaseInstance: ReturnType<typeof createClientComponentClient<Database>> | null = null;
+
+export function getSupabaseClient() {
+  if (!supabaseInstance) {
+    supabaseInstance = createClientComponentClient<Database>();
+  }
+  return supabaseInstance;
+}
+
+// Export the singleton instance
+export const supabase = getSupabaseClient();
 
 // Server-side client for API routes
 export { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
@@ -37,69 +48,98 @@ export async function signOut() {
   if (error) throw error;
 }
 
-// Typed query helpers
-export async function getTenantBills(tenantId: string) {
-  const { data, error } = await supabase
-    .from('bills')
-    .select('*')
-    .eq('tenant_id', tenantId)
-    .order('billing_period_start', { ascending: false });
+// Typed query helpers with optimized caching
+const queryCache = new Map<string, { data: any; timestamp: number }>();
+const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
-  if (error) throw new Error(error.message);
-  return data || [];
+function getCachedQuery<T>(key: string, queryFn: () => Promise<T>, cacheDuration = CACHE_DURATION): Promise<T> {
+  const cached = queryCache.get(key);
+  const now = Date.now();
+  
+  if (cached && (now - cached.timestamp) < cacheDuration) {
+    return Promise.resolve(cached.data);
+  }
+  
+  return queryFn().then(data => {
+    queryCache.set(key, { data, timestamp: now });
+    return data;
+  });
+}
+
+export async function getTenantBills(tenantId: string) {
+  return getCachedQuery(`tenant-bills-${tenantId}`, async () => {
+    const { data, error } = await supabase
+      .from('bills')
+      .select('*')
+      .eq('tenant_id', tenantId)
+      .order('billing_period_start', { ascending: false });
+
+    if (error) throw new Error(error.message);
+    return data || [];
+  });
 }
 
 export async function getBranches() {
-  const { data, error } = await supabase
-    .from('branches')
-    .select('*')
-    .order('name');
+  return getCachedQuery('branches', async () => {
+    const { data, error } = await supabase
+      .from('branches')
+      .select('*')
+      .order('name');
 
-  if (error) throw new Error(error.message);
-  return data || [];
+    if (error) throw new Error(error.message);
+    return data || [];
+  });
 }
 
 export async function getRooms(branchId?: string) {
-  let query = supabase
-    .from('rooms')
-    .select('*, branches(name)')
-    .order('room_number');
+  const cacheKey = branchId ? `rooms-${branchId}` : 'rooms-all';
+  
+  return getCachedQuery(cacheKey, async () => {
+    let query = supabase
+      .from('rooms')
+      .select('*, branches(name)')
+      .order('room_number');
 
-  if (branchId) {
-    query = query.eq('branch_id', branchId);
-  }
+    if (branchId) {
+      query = query.eq('branch_id', branchId);
+    }
 
-  const { data, error } = await query;
+    const { data, error } = await query;
 
-  if (error) throw new Error(error.message);
-  return data || [];
+    if (error) throw new Error(error.message);
+    return data || [];
+  });
 }
 
 export async function getAvailableRooms() {
-  const { data, error } = await supabase
-    .from('rooms')
-    .select('*, branches(name)')
-    .eq('is_occupied', false)
-    .order('room_number');
+  return getCachedQuery('available-rooms', async () => {
+    const { data, error } = await supabase
+      .from('rooms')
+      .select('*, branches(name)')
+      .eq('is_occupied', false)
+      .order('room_number');
 
-  if (error) throw new Error(error.message);
-  return data || [];
+    if (error) throw new Error(error.message);
+    return data || [];
+  });
 }
 
-// Role checking utility functions
+// Role checking utility functions with caching
 export async function getUserRole(userId: string): Promise<string | null> {
-  const { data, error } = await supabase
-    .from('user_roles')
-    .select(`
-      roles (
-        role_name
-      )
-    `)
-    .eq('user_id', userId)
-    .single();
-  
-  if (error || !data) return null;
-  return (data as any).roles?.role_name || null;
+  return getCachedQuery(`user-role-${userId}`, async () => {
+    const { data, error } = await supabase
+      .from('user_roles')
+      .select(`
+        roles (
+          role_name
+        )
+      `)
+      .eq('user_id', userId)
+      .single();
+    
+    if (error || !data) return null;
+    return (data as any).roles?.role_name || null;
+  });
 }
 
 export async function isAdmin(userId: string): Promise<boolean> {
@@ -154,4 +194,17 @@ export async function canViewAuditLogs(userId: string): Promise<boolean> {
 
 export async function canModifySystemSettings(userId: string): Promise<boolean> {
   return await isAdmin(userId);
+}
+
+// Cache invalidation functions
+export function invalidateCache(pattern?: string) {
+  if (pattern) {
+    for (const key of queryCache.keys()) {
+      if (key.includes(pattern)) {
+        queryCache.delete(key);
+      }
+    }
+  } else {
+    queryCache.clear();
+  }
 } 

@@ -35,7 +35,7 @@ import {
   Pencil
 } from 'lucide-react';
 import { logAuditEvent } from '@/lib/audit/logger';
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
+import { getSupabaseClient, invalidateCache } from '@/lib/supabase/client';
 import { calculateDepositApplication } from '@/lib/calculations/billing';
 
 interface TenantWithBilling extends Tenant {
@@ -90,7 +90,7 @@ interface PaymentForm {
 }
 
 export default function BillingPage() {
-  const supabase = createClientComponentClient();
+  const supabase = getSupabaseClient();
   const { addToast } = useToast();
   const [activeTab, setActiveTab] = useState('room-status');
   
@@ -259,6 +259,10 @@ export default function BillingPage() {
       });
       
       const response = await fetch(`/api/bills/active?${params}`);
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      
       const result = await response.json();
       
       if (result.success) {
@@ -268,7 +272,7 @@ export default function BillingPage() {
         addToast({
           type: 'error',
           title: 'Error',
-          message: 'Failed to fetch active bills'
+          message: result.error || 'Failed to fetch active bills'
         });
       }
     } catch (error) {
@@ -404,9 +408,20 @@ export default function BillingPage() {
         );
 
         setTenants(tenantsWithBilling);
+      } else {
+        addToast({
+          type: 'error',
+          title: 'Error',
+          message: result.error || 'Failed to fetch tenants'
+        });
       }
     } catch (error) {
       console.error('Error fetching tenants:', error);
+      addToast({
+        type: 'error',
+        title: 'Error',
+        message: 'Failed to fetch tenants'
+      });
     } finally {
       setIsLoadingTenants(false);
     }
@@ -448,6 +463,7 @@ export default function BillingPage() {
           title: 'Invalid Input',
           message: 'Please check the highlighted fields and try again.'
         });
+        setIsSubmitting(false);
         return;
       }
 
@@ -460,6 +476,7 @@ export default function BillingPage() {
             title: 'Invalid Reading',
             message: `The new reading (${formData.present_electricity_reading} kWh) must be higher than the previous reading (${previousReading} kWh)`
           });
+          setIsSubmitting(false);
           return;
         }
       }
@@ -482,24 +499,29 @@ export default function BillingPage() {
         });
 
         // Log the event
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user && result.data) {
-          await logAuditEvent(
-            supabase,
-            user.id,
-            'BILL_CREATED',
-            'bills',
-            result.data.id,
-            null,
-            {
-              tenant_id: result.data.tenant_id,
-              total_amount_due: result.data.total_amount_due,
-              billing_period_end: result.data.billing_period_end,
-            }
-          );
+        try {
+          const { data: { user } } = await supabase.auth.getUser();
+          if (user && result.data) {
+            await logAuditEvent(
+              supabase,
+              user.id,
+              'BILL_CREATED',
+              'bills',
+              result.data.id,
+              null,
+              {
+                tenant_id: result.data.tenant_id,
+                total_amount_due: result.data.total_amount_due,
+                billing_period_end: result.data.billing_period_end,
+              }
+            );
+          }
+        } catch (auditError) {
+          console.error('Audit logging failed:', auditError);
+          // Don't block the UI for audit errors
         }
 
-        // Reset form
+        // Reset form and close modal
         setFormData({
           tenant_id: '',
           present_electricity_reading: '',
@@ -510,9 +532,14 @@ export default function BillingPage() {
         setSelectedTenant(null);
         setIsGenerateDialogOpen(false);
 
-        // Refresh data
-        fetchActiveBills();
-        fetchTenantsWithBilling();
+        // Invalidate cache and refresh data
+        invalidateCache('bills');
+        invalidateCache('tenants');
+        
+        await Promise.all([
+          fetchActiveBills(),
+          fetchTenantsWithBilling()
+        ]);
       } else {
         addToast({
           type: 'error',
@@ -638,7 +665,11 @@ export default function BillingPage() {
         
         setIsPaymentDialogOpen(false);
         
-        // Refresh both bills and tenants data
+        // Invalidate cache and refresh both bills and tenants data
+        invalidateCache('bills');
+        invalidateCache('tenants');
+        invalidateCache('payments');
+        
         await Promise.all([
           fetchActiveBills(),
           fetchTenantsWithBilling()
@@ -684,7 +715,10 @@ export default function BillingPage() {
             : 'No overdue bills found that need penalties'
         });
         
-        // Refresh the bills data
+        // Invalidate cache and refresh the bills data
+        invalidateCache('bills');
+        invalidateCache('tenants');
+        
         await Promise.all([
           fetchActiveBills(),
           fetchTenantsWithBilling()
@@ -961,7 +995,15 @@ export default function BillingPage() {
         
         // Close dialog and refresh bills
         setIsEditBillDialogOpen(false);
-        fetchActiveBills();
+        
+        // Invalidate cache and refresh data
+        invalidateCache('bills');
+        invalidateCache('tenants');
+        
+        await Promise.all([
+          fetchActiveBills(),
+          fetchTenantsWithBilling()
+        ]);
         
         // Log the event
         const { data: { user } } = await supabase.auth.getUser();

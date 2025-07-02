@@ -13,6 +13,73 @@ export async function GET(request: NextRequest) {
     const available = searchParams.get('available');
     const branchId = searchParams.get('branch_id');
 
+    console.log('GET /api/rooms called with params:', { available, branchId });
+
+    // Filter by availability if specified
+    if (available === 'true') {
+      // First, get all active tenants and their room IDs
+      const { data: activeTenants, error: tenantsError } = await supabase
+        .from('tenants')
+        .select('room_id')
+        .eq('is_active', true)
+        .not('room_id', 'is', null);
+
+      if (tenantsError) {
+        console.error('Error fetching active tenants:', tenantsError);
+        return NextResponse.json({
+          error: 'Failed to fetch tenant data',
+          success: false
+        }, { status: 500 });
+      }
+
+      const occupiedRoomIds = activeTenants?.map(t => t.room_id).filter(Boolean) || [];
+      console.log('Occupied room IDs:', occupiedRoomIds);
+
+      // Now get all rooms, excluding the occupied ones
+      let roomQuery = supabase
+        .from('rooms')
+        .select(`
+          *,
+          branches (
+            id,
+            name,
+            address
+          )
+        `)
+        .order('room_number');
+
+      // Exclude occupied rooms if there are any
+      if (occupiedRoomIds.length > 0) {
+        roomQuery = roomQuery.not('id', 'in', `(${occupiedRoomIds.map(id => `"${id}"`).join(',')})`);
+      }
+
+      // Filter by branch if specified
+      if (branchId) {
+        roomQuery = roomQuery.eq('branch_id', branchId);
+      }
+
+      const { data: availableRooms, error: roomsError } = await roomQuery;
+
+      if (roomsError) {
+        console.error('Error fetching available rooms:', roomsError);
+        return NextResponse.json({
+          error: 'Failed to fetch available rooms',
+          success: false
+        }, { status: 500 });
+      }
+
+      console.log(`Found ${availableRooms?.length || 0} available rooms${branchId ? ` in branch ${branchId}` : ''}`);
+
+      return NextResponse.json({
+        data: availableRooms?.map(room => ({
+          ...room,
+          branch: room.branches // Normalize the structure
+        })) || [],
+        success: true
+      });
+    }
+
+    // For non-available queries, use the simple approach
     let query = supabase
       .from('rooms')
       .select(`
@@ -24,21 +91,6 @@ export async function GET(request: NextRequest) {
         )
       `)
       .order('room_number');
-
-    // Filter by availability if specified
-    if (available === 'true') {
-      const { data: activeTenants } = await supabase
-        .from('tenants')
-        .select('room_id')
-        .eq('is_active', true);
-
-      const occupiedRoomIds = activeTenants?.map(t => t.room_id) || [];
-      
-      // Only filter if there are actually occupied rooms
-      if (occupiedRoomIds.length > 0) {
-        query = query.not('id', 'in', `(${occupiedRoomIds.join(',')})`);
-      }
-    }
 
     // Filter by branch if specified
     if (branchId) {
@@ -55,8 +107,13 @@ export async function GET(request: NextRequest) {
       }, { status: 500 });
     }
 
+    console.log(`Found ${rooms?.length || 0} rooms${branchId ? ` in branch ${branchId}` : ''}`);
+
     return NextResponse.json({
-      data: rooms,
+      data: rooms?.map(room => ({
+        ...room,
+        branch: room.branches // Normalize the structure
+      })) || [],
       success: true
     });
 

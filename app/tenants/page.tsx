@@ -33,7 +33,7 @@ import {
   Receipt
 } from 'lucide-react';
 import { logAuditEvent } from '@/lib/audit/logger';
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
+import { getSupabaseClient, invalidateCache } from '@/lib/supabase/client';
 import { z } from 'zod';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -63,7 +63,7 @@ interface TenantWithBilling extends Tenant {
 }
 
 export default function TenantsPage() {
-  const supabase = createClientComponentClient();
+  const supabase = getSupabaseClient();
   const { addToast } = useToast();
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [availableRooms, setAvailableRooms] = useState<Room[]>([]);
@@ -138,6 +138,10 @@ export default function TenantsPage() {
   useEffect(() => {
     if (addTenantBranchId) {
       setIsLoadingRooms(true);
+      // Invalidate cache to ensure fresh data
+      invalidateCache('rooms');
+      invalidateCache('available-rooms');
+      
       fetchAvailableRooms(addTenantBranchId).finally(() => {
         setIsLoadingRooms(false);
       });
@@ -161,6 +165,7 @@ export default function TenantsPage() {
 
   const fetchTenants = async () => {
     try {
+      setIsLoading(true);
       const response = await fetch('/api/tenants');
       const result = await response.json();
       
@@ -203,11 +208,17 @@ export default function TenantsPage() {
 
   const fetchAvailableRooms = async (branchId?: string | null) => {
     try {
+      // Invalidate room cache before fetching to ensure fresh data
+      invalidateCache('rooms');
+      invalidateCache('available-rooms');
+      
       const url = new URL('/api/rooms', window.location.origin);
       url.searchParams.append('available', 'true');
       if (branchId) {
         url.searchParams.append('branch_id', branchId);
       }
+
+      console.log('Fetching rooms from:', url.toString()); // Debug log
 
       const response = await fetch(url.toString());
       
@@ -217,14 +228,17 @@ export default function TenantsPage() {
       
       const result = await response.json();
       
+      console.log('Rooms API response:', result); // Debug log
+      
       if (result.success) {
         setAvailableRooms(result.data || []);
+        console.log('Available rooms set:', result.data); // Debug log
       } else {
         console.error('API returned error:', result.error);
         addToast({
           type: 'error',
           title: 'Error',
-          message: 'Failed to fetch available rooms',
+          message: result.error || 'Failed to fetch available rooms',
           duration: 5000
         });
       }
@@ -300,7 +314,11 @@ export default function TenantsPage() {
           duration: 5000
         });
         
-        // Refresh data
+        // Invalidate caches and refresh data
+        invalidateCache('tenants');
+        invalidateCache('rooms');
+        invalidateCache('available-rooms');
+        
         await fetchTenants();
         await fetchAvailableRooms();
 
