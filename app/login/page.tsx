@@ -10,12 +10,12 @@ import Image from 'next/image';
 function WelcomeContent() {
   return (
     <div className="w-full max-w-lg mx-auto text-center space-y-6 text-white">
-      <div className="mb-8">
+      <div className="mb-10">
         <Image
           src="/lib/Logo/J-H LOGO-WHITE.png"
           alt="J&H Apartment Logo"
-          width={220}
-          height={100}
+          width={320}
+          height={140}
           className="mx-auto"
           priority
         />
@@ -24,30 +24,30 @@ function WelcomeContent() {
       <p className="text-base md:text-lg text-blue-100">
         Streamline your property management with our comprehensive platform designed for modern apartment operations.
       </p>
-      <div className="space-y-4 mt-8">
-        <div className="flex items-center space-x-3 justify-center">
-          <div className="bg-white/10 p-2 rounded-full">
-            <CheckCircle className="h-5 w-5 text-white" />
+      <div className="space-y-4 mt-8 text-left">
+        <div className="flex items-center">
+          <div className="w-10 h-10 flex items-center justify-center rounded-full bg-white/10">
+            <CheckCircle className="h-6 w-6 text-white" />
           </div>
-          <div className="text-left">
+          <div className="ml-4 flex flex-col justify-center">
             <div className="font-semibold text-base text-white">Automated Billing</div>
             <div className="text-blue-100 text-xs md:text-sm">Generate bills, track payments, and manage deposits automatically</div>
           </div>
         </div>
-        <div className="flex items-center space-x-3 justify-center">
-          <div className="bg-white/10 p-2 rounded-full">
-            <Users className="h-5 w-5 text-white" />
+        <div className="flex items-center">
+          <div className="w-10 h-10 flex items-center justify-center rounded-full bg-white/10">
+            <Users className="h-6 w-6 text-white" />
           </div>
-          <div className="text-left">
+          <div className="ml-4 flex flex-col justify-center">
             <div className="font-semibold text-base text-white">Tenant Management</div>
             <div className="text-blue-100 text-xs md:text-sm">Comprehensive tenant profiles with contract and payment history</div>
           </div>
         </div>
-        <div className="flex items-center space-x-3 justify-center">
-          <div className="bg-white/10 p-2 rounded-full">
-            <BarChart3 className="h-5 w-5 text-white" />
+        <div className="flex items-center">
+          <div className="w-10 h-10 flex items-center justify-center rounded-full bg-white/10">
+            <BarChart3 className="h-6 w-6 text-white" />
           </div>
-          <div className="text-left">
+          <div className="ml-4 flex flex-col justify-center">
             <div className="font-semibold text-base text-white">Smart Analytics</div>
             <div className="text-blue-100 text-xs md:text-sm">Real-time insights and detailed financial reporting</div>
           </div>
@@ -235,75 +235,89 @@ export default function LoginPage() {
         </div>
       </div>
       {/* Desktop Layout - Static, Compact, No Scroll */}
-      <div className="hidden lg:flex min-h-screen w-full">
+      <div className="hidden lg:flex min-h-screen w-full bg-gray-50">
         {/* Left Side - Login Form */}
-        <div className="flex-1 flex items-center justify-center px-8 bg-white">
-          <form onSubmit={handleLogin} className="w-full max-w-sm mx-auto space-y-4">
-            <h2 className="text-2xl font-bold text-gray-900 mb-2 text-center">Sign In</h2>
-            {error && (
-              <div className="flex items-center space-x-2 text-sm text-red-600 bg-red-50 p-3 rounded-lg">
-                <AlertCircle className="h-4 w-4" />
-                <span>{error}</span>
+        <div className="flex-1 flex items-center justify-center px-8">
+          <div className="w-full max-w-md bg-white rounded-2xl shadow-[0_20px_60px_-15px_rgba(0,0,0,0.2)] border border-gray-100 p-8 relative z-10 transition-transform transition-shadow duration-300 ease-out hover:scale-[1.025] hover:shadow-[0_32px_80px_-10px_rgba(30,64,175,0.25)]">
+            <form onSubmit={handleLogin} className="space-y-6">
+              <div className="text-center mb-8">
+                <h2 className="text-2xl font-bold text-gray-900">Welcome Back</h2>
+                <p className="text-gray-600 mt-2">Sign in to your account to continue</p>
               </div>
-            )}
-            <div>
-              <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
-                Email
-              </label>
-              <Input
-                id="email"
-                type="email"
-                placeholder="Enter your email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="w-full h-11 px-4 bg-gray-50 border-gray-200 rounded-lg focus:bg-white focus:border-blue-500"
-                required
-                disabled={isLoading}
-              />
-            </div>
-            <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">
-                Password
-              </label>
-              <div className="relative">
-                <Input
-                  id="password"
-                  type={showPassword ? 'text' : 'password'}
-                  placeholder="••••••••"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full h-11 px-4 pr-12 bg-gray-50 border-gray-200 rounded-lg focus:bg-white focus:border-blue-500"
-                  required
-                  disabled={isLoading}
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                >
-                  {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
-                </button>
-              </div>
-            </div>
-            <Button
-              type="submit"
-              className="w-full h-11 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors"
-              disabled={isLoading || !email || !password}
-            >
-              {isLoading ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Signing in...
-                </>
-              ) : (
-                'Sign In'
+              
+              {error && (
+                <div className="flex items-center space-x-2 text-sm text-red-600 bg-red-50 p-3 rounded-lg">
+                  <AlertCircle className="h-4 w-4" />
+                  <span>{error}</span>
+                </div>
               )}
-            </Button>
-          </form>
+              
+              <div className="space-y-4">
+                <div>
+                  <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
+                    Email
+                  </label>
+                  <Input
+                    id="email"
+                    type="email"
+                    placeholder="Enter your email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="w-full h-11 px-4 bg-gray-50 border-gray-200 rounded-lg focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all"
+                    required
+                    disabled={isLoading}
+                  />
+                </div>
+                
+                <div>
+                  <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">
+                    Password
+                  </label>
+                  <div className="relative">
+                    <Input
+                      id="password"
+                      type={showPassword ? 'text' : 'password'}
+                      placeholder="••••••••"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      className="w-full h-11 px-4 pr-12 bg-gray-50 border-gray-200 rounded-lg focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all"
+                      required
+                      disabled={isLoading}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    >
+                      {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                    </button>
+                  </div>
+                </div>
+              </div>
+              
+              <Button
+                type="submit"
+                className="w-full h-11 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors shadow-lg shadow-blue-500/30 hover:shadow-blue-600/30"
+                disabled={isLoading || !email || !password}
+              >
+                {isLoading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Signing in...
+                  </>
+                ) : (
+                  'Sign In'
+                )}
+              </Button>
+            </form>
+          </div>
         </div>
-        {/* Right Side - Feature Section */}
-        <div className="flex-1 bg-gradient-to-br from-blue-600 to-blue-800 flex flex-col justify-center items-center px-8 text-white">
-          <WelcomeContent />
+
+        {/* Right Side - Welcome Content */}
+        <div className="flex-1 flex items-center justify-center relative">
+          <div className="w-full h-full bg-gradient-to-br from-blue-600 via-blue-700 to-blue-800 rounded-l-[40px] shadow-2xl shadow-blue-900/30 flex items-center justify-center p-8">
+            <WelcomeContent />
+          </div>
         </div>
       </div>
     </>

@@ -1,12 +1,13 @@
 'use client';
 
-import React, { useState, useEffect, useMemo, useCallback, memo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, memo, Suspense } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { getSupabaseClient } from '@/lib/supabase/client';
 import { useToast } from '@/components/ui/use-toast';
+import { usePageTitleEffect } from '@/lib/hooks/usePageTitleEffect';
 import { 
   BuildingOfficeIcon, 
   HomeIcon, 
@@ -101,51 +102,63 @@ interface ConsolidatedReport {
   }>;
 }
 
-// Memoized stat card component to prevent unnecessary re-renders
-const StatCard = memo(({ title, value, subtitle, icon: Icon, color, isLoading }: {
+// Memoized StatCard component to prevent unnecessary re-renders
+const StatCard = memo(({ 
+  title, 
+  value, 
+  change, 
+  changeType, 
+  icon: Icon, 
+  isLoading,
+  formatValue = (val) => val.toString()
+}: {
   title: string;
-  value: string | number;
-  subtitle: string;
-  icon: any;
-  color: string;
+  value: number;
+  change?: number;
+  changeType?: 'increase' | 'decrease' | 'neutral';
+  icon: React.ComponentType<any>;
   isLoading?: boolean;
+  formatValue?: (value: number) => string;
 }) => (
-  <Card className="bg-white border-gray-200 hover:shadow-lg transition-shadow">
-    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
-      <CardTitle className="text-sm font-medium text-gray-600">{title}</CardTitle>
-      <Icon className={`h-5 w-5 ${color}`} />
-    </CardHeader>
-    <CardContent>
-      {isLoading ? (
-        <div className="h-8 bg-gray-200 rounded animate-pulse"></div>
-      ) : (
-        <>
-          <div className="text-2xl font-bold text-gray-900">{value}</div>
-          <p className="text-xs text-gray-500 mt-1">{subtitle}</p>
-        </>
-      )}
-    </CardContent>
-  </Card>
+  <div className="stats-card">
+    <div className="flex items-center justify-between">
+      <div className="flex items-center space-x-3">
+        <div className="flex-shrink-0">
+          <div className="stats-icon">
+            <Icon className="h-6 w-6 text-white" />
+          </div>
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-medium text-gray-600 truncate">{title}</p>
+          <div className="flex items-baseline space-x-2">
+            {isLoading ? (
+              <div className="h-8 w-24 bg-gray-200 rounded animate-pulse" />
+            ) : (
+              <p className="text-2xl font-bold text-gray-900">{formatValue(value)}</p>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
 ));
 
 StatCard.displayName = 'StatCard';
 
+// Optimized performance with React.memo and better state management
 function DashboardPage() {
-  // Persistent cache for API responses
-  const [dataCache, setDataCache] = useState(() => ({
-    stats: null as DashboardStats | null,
-    reports: new Map<string, ConsolidatedReport>(),
-    lastStatsUpdate: 0
-  }));
+  // Set page title and subtitle
+  usePageTitleEffect('Dashboard', 'Overview of your property management system');
   
-  const [stats, setStats] = useState<DashboardStats>({
+  // Optimized state management with better initial values
+  const [stats, setStats] = useState<DashboardStats>(() => ({
     totalBranches: 0,
     totalRooms: 0,
     occupiedRooms: 0,
     activeTenants: 0,
     monthlyIncome: 0,
     monthlyExpenses: 0
-  });
+  }));
   
   const [selectedMonth, setSelectedMonth] = useState(() => {
     const today = new Date();
@@ -161,7 +174,10 @@ function DashboardPage() {
   const [isSendingEmail, setIsSendingEmail] = useState(false);
   const [isSendingReminders, setIsSendingReminders] = useState(false);
   
-  // Create supabase client once
+  // Persistent cache with better structure
+  const [apiCache] = useState(() => new Map<string, { data: any; timestamp: number; ttl: number }>());
+  
+  // Create supabase client once and memoize
   const supabase = useMemo(() => getSupabaseClient(), []);
   const { toast } = useToast();
 
@@ -169,21 +185,32 @@ function DashboardPage() {
   const formatCurrency = useCallback((amount: number) => {
     return new Intl.NumberFormat('en-PH', {
       style: 'currency',
-      currency: 'PHP'
+      currency: 'PHP',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0
     }).format(amount);
   }, []);
 
-  // Cache duration constants
-  const STATS_CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
-  const REPORT_CACHE_DURATION = 10 * 60 * 1000; // 10 minutes
+  // Cache utilities
+  const getCachedData = useCallback((key: string) => {
+    const cached = apiCache.get(key);
+    if (cached && Date.now() - cached.timestamp < cached.ttl) {
+      return cached.data;
+    }
+    return null;
+  }, [apiCache]);
 
-  // Optimized stats fetching with caching
+  const setCachedData = useCallback((key: string, data: any, ttl: number = 300000) => {
+    apiCache.set(key, { data, timestamp: Date.now(), ttl });
+  }, [apiCache]);
+
+  // Optimized stats fetching with improved caching
   const fetchDashboardStats = useCallback(async () => {
-    const now = Date.now();
+    const cacheKey = `stats-${selectedMonth}`;
+    const cached = getCachedData(cacheKey);
     
-    // Check if we have cached stats that are still fresh
-    if (dataCache.stats && (now - dataCache.lastStatsUpdate) < STATS_CACHE_DURATION) {
-      setStats(dataCache.stats);
+    if (cached) {
+      setStats(cached);
       setIsLoading(false);
       return;
     }
@@ -213,11 +240,7 @@ function DashboardPage() {
         };
         
         setStats(newStats);
-        setDataCache(prev => ({
-          ...prev,
-          stats: newStats,
-          lastStatsUpdate: now
-        }));
+        setCachedData(cacheKey, newStats);
       }
     } catch (error) {
       console.error('Error fetching dashboard stats:', error);
@@ -229,17 +252,16 @@ function DashboardPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [selectedMonth, dataCache.stats, dataCache.lastStatsUpdate, toast]);
+  }, [selectedMonth, getCachedData, setCachedData, toast]);
 
-  // Optimized report fetching with caching
+  // Optimized report fetching with better error handling
   const fetchConsolidatedReport = useCallback(async () => {
-    const cacheKey = `${selectedMonth}-summary`;
-    const cachedReport = dataCache.reports.get(cacheKey);
+    const cacheKey = `report-${selectedMonth}`;
+    const cached = getCachedData(cacheKey);
     
-    // Check cache first
-    if (cachedReport) {
-      setConsolidatedReport(cachedReport);
-      processConsolidatedData(cachedReport);
+    if (cached) {
+      setConsolidatedReport(cached.report);
+      setMonthlyReport(cached.monthlyReport);
       setIsLoadingReport(false);
       return;
     }
@@ -262,14 +284,10 @@ function DashboardPage() {
       
       if (data.success && data.data) {
         setConsolidatedReport(data.data);
-        processConsolidatedData(data.data);
+        const processedReport = processConsolidatedData(data.data);
+        setMonthlyReport(processedReport);
         
-        // Cache the report
-        setDataCache(prev => {
-          const newReports = new Map(prev.reports);
-          newReports.set(cacheKey, data.data);
-          return { ...prev, reports: newReports };
-        });
+        setCachedData(cacheKey, { report: data.data, monthlyReport: processedReport });
       }
     } catch (error) {
       console.error('Error fetching consolidated report:', error);
@@ -281,41 +299,53 @@ function DashboardPage() {
     } finally {
       setIsLoadingReport(false);
     }
-  }, [selectedMonth, dataCache.reports, toast]);
+  }, [selectedMonth, getCachedData, setCachedData, toast]);
 
   // Memoized function to process consolidated data
-  const processConsolidatedData = useCallback((data: ConsolidatedReport) => {
-    const totalIncome = data.overallSnapshot.reduce((sum: number, branch: any) => sum + branch.totalIncome, 0);
-    const totalExpenses = data.overallSnapshot.reduce((sum: number, branch: any) => sum + branch.totalExpenses, 0);
-    const rent = data.overallSnapshot.reduce((sum: number, branch: any) => sum + branch.rent, 0);
-    const electricity = data.overallSnapshot.reduce((sum: number, branch: any) => sum + branch.electricity, 0);
-    const water = data.overallSnapshot.reduce((sum: number, branch: any) => sum + branch.water, 0);
-    const extraFees = data.overallSnapshot.reduce((sum: number, branch: any) => sum + branch.extraFees, 0);
-    const penalty = data.overallSnapshot.reduce((sum: number, branch: any) => sum + branch.penalty, 0);
-    const forfeitedDeposits = data.overallSnapshot.reduce((sum: number, branch: any) => sum + branch.forfeitedDeposits, 0);
+  const processConsolidatedData = useCallback((data: ConsolidatedReport): MonthlyReport => {
+    const snapshot = data.overallSnapshot || [];
     
-    setMonthlyReport({
-      totalRentCollected: rent,
-      totalElectricityCollected: electricity,
-      totalWaterCollected: water,
-      totalExtraFeesCollected: extraFees,
-      totalPenaltyFeesCollected: penalty,
-      forfeitedDeposits: forfeitedDeposits,
-      totalIncome: totalIncome,
-      totalExpenses: totalExpenses,
-      profitLoss: totalIncome - totalExpenses
+    const totals = snapshot.reduce((acc, branch) => ({
+      totalIncome: acc.totalIncome + (branch.totalIncome || 0),
+      totalExpenses: acc.totalExpenses + (branch.totalExpenses || 0),
+      rent: acc.rent + (branch.rent || 0),
+      electricity: acc.electricity + (branch.electricity || 0),
+      water: acc.water + (branch.water || 0),
+      extraFees: acc.extraFees + (branch.extraFees || 0),
+      penalty: acc.penalty + (branch.penalty || 0),
+      forfeitedDeposits: acc.forfeitedDeposits + (branch.forfeitedDeposits || 0)
+    }), {
+      totalIncome: 0,
+      totalExpenses: 0,
+      rent: 0,
+      electricity: 0,
+      water: 0,
+      extraFees: 0,
+      penalty: 0,
+      forfeitedDeposits: 0
     });
+    
+    return {
+      totalRentCollected: totals.rent,
+      totalElectricityCollected: totals.electricity,
+      totalWaterCollected: totals.water,
+      totalExtraFeesCollected: totals.extraFees,
+      totalPenaltyFeesCollected: totals.penalty,
+      forfeitedDeposits: totals.forfeitedDeposits,
+      totalIncome: totals.totalIncome,
+      totalExpenses: totals.totalExpenses,
+      profitLoss: totals.totalIncome - totals.totalExpenses
+    };
   }, []);
 
-  // Initial load - only fetch stats once
+  // Optimized effects with dependency arrays
   useEffect(() => {
     fetchDashboardStats();
   }, [fetchDashboardStats]);
 
-  // Fetch report when month changes
   useEffect(() => {
     fetchConsolidatedReport();
-  }, [selectedMonth, fetchConsolidatedReport]);
+  }, [fetchConsolidatedReport]);
 
   // Debounced month change handler
   const handleMonthChange = useCallback((newMonth: string) => {
@@ -389,12 +419,21 @@ function DashboardPage() {
     }
   }, [emailAddresses, selectedMonth, toast]);
 
-  // Memoized computed values to prevent unnecessary recalculations
-  const { occupancyRate, profit } = useMemo(() => {
+  // Memoized calculated values to prevent recalculation on every render
+  const { occupancyRate, profit, isProfit } = useMemo(() => {
     const rate = stats.totalRooms > 0 ? (stats.occupiedRooms / stats.totalRooms) * 100 : 0;
-    const profitValue = monthlyReport?.profitLoss || 0;
-    return { occupancyRate: rate, profit: profitValue };
-  }, [stats.totalRooms, stats.occupiedRooms, monthlyReport?.profitLoss]);
+    const profitAmount = stats.monthlyIncome - stats.monthlyExpenses;
+    
+    return {
+      occupancyRate: rate,
+      profit: profitAmount,
+      isProfit: profitAmount >= 0
+    };
+  }, [stats.totalRooms, stats.occupiedRooms, stats.monthlyIncome, stats.monthlyExpenses]);
+
+  // Memoized format functions
+  const formatOccupancyRate = useCallback((rate: number) => `${rate.toFixed(1)}%`, []);
+  const formatRoomCount = useCallback((occupied: number, total: number) => `${occupied}/${total}`, []);
 
   if (isLoading) {
     return (
@@ -416,49 +455,47 @@ function DashboardPage() {
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-7xl mx-auto px-3 sm:px-4 lg:px-8 py-4 sm:py-6 lg:py-8">
-        {/* Header */}
-        <div className="mb-6 sm:mb-8">
-          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Dashboard</h1>
-          <p className="text-gray-600 mt-1 sm:mt-2 text-sm sm:text-base">Overview of your property management system</p>
-        </div>
+
 
         {/* Stats Grid - Using memoized components */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 mb-6 sm:mb-8">
           <StatCard
             title="Total Branches"
             value={stats.totalBranches}
-            subtitle="Property locations"
+            change={stats.totalBranches - (getCachedData(`stats-${selectedMonth}`)?.totalBranches || 0)}
+            changeType={stats.totalBranches > (getCachedData(`stats-${selectedMonth}`)?.totalBranches || 0) ? 'increase' : stats.totalBranches < (getCachedData(`stats-${selectedMonth}`)?.totalBranches || 0) ? 'decrease' : 'neutral'}
             icon={BuildingOfficeIcon}
-            color="text-blue-600"
             isLoading={isLoading}
           />
           
-          <StatCard
-            title="Room Occupancy"
-            value={`${stats.occupiedRooms}/${stats.totalRooms}`}
-            subtitle={`${occupancyRate.toFixed(1)}% occupancy rate`}
-            icon={HomeIcon}
-            color="text-green-600"
-            isLoading={isLoading}
-          />
+                     <StatCard
+             title="Room Occupancy"
+             value={stats.occupiedRooms}
+             change={stats.occupiedRooms - (getCachedData(`stats-${selectedMonth}`)?.occupiedRooms || 0)}
+             changeType={stats.occupiedRooms > (getCachedData(`stats-${selectedMonth}`)?.occupiedRooms || 0) ? 'increase' : stats.occupiedRooms < (getCachedData(`stats-${selectedMonth}`)?.occupiedRooms || 0) ? 'decrease' : 'neutral'}
+             icon={HomeIcon}
+             formatValue={(val) => formatRoomCount(val, stats.totalRooms)}
+             isLoading={isLoading}
+           />
           
           <StatCard
             title="Active Tenants"
             value={stats.activeTenants}
-            subtitle="Current residents"
+            change={stats.activeTenants - (getCachedData(`stats-${selectedMonth}`)?.activeTenants || 0)}
+            changeType={stats.activeTenants > (getCachedData(`stats-${selectedMonth}`)?.activeTenants || 0) ? 'increase' : stats.activeTenants < (getCachedData(`stats-${selectedMonth}`)?.activeTenants || 0) ? 'decrease' : 'neutral'}
             icon={UsersIcon}
-            color="text-purple-600"
             isLoading={isLoading}
           />
           
-          <StatCard
-            title="Monthly Profit"
-            value={formatCurrency(profit)}
-            subtitle={`${selectedMonth} profit/loss`}
-            icon={profit >= 0 ? ArrowTrendingUpIcon : ArrowTrendingDownIcon}
-            color={profit >= 0 ? "text-green-600" : "text-red-600"}
-            isLoading={isLoading}
-          />
+                     <StatCard
+             title="Monthly Profit"
+             value={profit}
+             change={profit - (getCachedData(`stats-${selectedMonth}`)?.profit || 0)}
+             changeType={profit > (getCachedData(`stats-${selectedMonth}`)?.profit || 0) ? 'increase' : profit < (getCachedData(`stats-${selectedMonth}`)?.profit || 0) ? 'decrease' : 'neutral'}
+             icon={profit >= 0 ? ArrowTrendingUpIcon : ArrowTrendingDownIcon}
+             formatValue={formatCurrency}
+             isLoading={isLoading}
+           />
         </div>
 
         {/* Quick Actions and Monthly Report */}

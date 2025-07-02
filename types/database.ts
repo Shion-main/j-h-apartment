@@ -257,7 +257,7 @@ export interface TenantMoveInForm {
   email_address: string;
   room_id: string;
   rent_start_date: string;
-  initial_electricity_reading: number;
+  initial_electricity_reading: string | number;
   advance_payment_received: boolean;
   security_deposit_received: boolean;
 }

@@ -285,6 +285,13 @@ export async function POST(request: NextRequest) {
 
     // Send bill generated email with full bill data
     try {
+      console.log('About to send email with data:', {
+        email: fullBill.tenants.email_address,
+        full_name: fullBill.tenants.full_name,
+        room_number: fullBill.tenants.rooms.room_number,
+        branch_name: fullBill.tenants.rooms.branches.name
+      });
+      
       await EmailService.sendBillEmail({
         email: fullBill.tenants.email_address,
         full_name: fullBill.tenants.full_name,

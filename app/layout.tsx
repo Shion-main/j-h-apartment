@@ -1,11 +1,8 @@
 import type { Metadata } from 'next'
-import { Inter } from 'next/font/google'
 import { headers } from 'next/headers'
 import './globals.css'
 import DashboardLayout from '@/components/layout/DashboardLayout'
 import ToasterProvider from '@/components/layout/Toaster'
-
-const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
   title: 'J&H Management System',
@@ -33,8 +30,8 @@ export default function RootLayout({
 
   if (isLoginPage) {
     return (
-      <html lang="en" suppressHydrationWarning>
-        <body className={inter.className}>
+      <html lang="en" suppressHydrationWarning className="antialiased">
+        <body className="font-sans bg-background text-foreground">
           <ToasterProvider>
             {children}
           </ToasterProvider>
@@ -44,8 +41,8 @@ export default function RootLayout({
   }
 
   return (
-    <html lang="en" suppressHydrationWarning>
-      <body className={inter.className}>
+    <html lang="en" suppressHydrationWarning className="antialiased">
+      <body className="font-sans bg-background text-foreground">
         <ToasterProvider>
           <DashboardLayout>
             {children}

@@ -1,4 +1,4 @@
-import { format, parseISO } from 'date-fns';
+import { format, parseISO, addMonths as dateFnsAddMonths } from 'date-fns';
 import { type ClassValue, clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
@@ -51,6 +51,11 @@ export function formatDateForInput(date: string | Date | null | undefined): stri
   return formatDate(date, 'yyyy-MM-dd');
 }
 
+// Date manipulation utilities
+export function addMonths(date: Date, amount: number): Date {
+  return dateFnsAddMonths(date, amount);
+}
+
 // Number formatting utilities
 export function formatNumber(value: number, decimals: number = 2): string {
   return new Intl.NumberFormat('en-PH', {
@@ -64,8 +69,8 @@ export function formatCurrency(amount: number): string {
   return new Intl.NumberFormat('en-PH', {
     style: 'currency',
     currency: 'PHP',
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0
   }).format(amount);
 }
 
@@ -244,74 +249,253 @@ export function setStoredValue<T>(key: string, value: T): void {
   }
 }
 
-// Debounce utility
+// Enhanced performance utilities
+
+// Performance optimization utilities
+
+/**
+ * Creates a debounced function that delays invoking func until after wait milliseconds
+ * have elapsed since the last time the debounced function was invoked.
+ */
 export function debounce<T extends (...args: any[]) => any>(
+  func: T,
+  wait: number,
+  immediate?: boolean
+): (...args: Parameters<T>) => void {
+  let timeout: NodeJS.Timeout | null = null;
+  
+  return function executedFunction(...args: Parameters<T>) {
+    const later = () => {
+      timeout = null;
+      if (!immediate) func(...args);
+    };
+    
+    const callNow = immediate && !timeout;
+    clearTimeout(timeout!);
+    timeout = setTimeout(later, wait);
+    
+    if (callNow) func(...args);
+  };
+}
+
+/**
+ * Creates a throttled function that only invokes func at most once per every wait milliseconds
+ */
+export function throttle<T extends (...args: any[]) => any>(
   func: T,
   wait: number
 ): (...args: Parameters<T>) => void {
-  let timeout: NodeJS.Timeout;
-
-  return (...args: Parameters<T>) => {
-    clearTimeout(timeout);
-    timeout = setTimeout(() => func(...args), wait);
+  let inThrottle: boolean;
+  
+  return function executedFunction(...args: Parameters<T>) {
+    if (!inThrottle) {
+      func(...args);
+      inThrottle = true;
+      setTimeout(() => inThrottle = false, wait);
+    }
   };
 }
 
-// Add months to a date
-export function addMonths(date: Date, months: number): Date {
-  const newDate = new Date(date);
-  newDate.setMonth(newDate.getMonth() + months);
-  return newDate;
+/**
+ * Memoization utility for expensive calculations
+ */
+export function memoize<TArgs extends any[], TReturn>(
+  fn: (...args: TArgs) => TReturn,
+  getKey?: (...args: TArgs) => string
+): (...args: TArgs) => TReturn {
+  const cache = new Map<string, TReturn>();
+  
+  return (...args: TArgs): TReturn => {
+    const key = getKey ? getKey(...args) : JSON.stringify(args);
+    
+    if (cache.has(key)) {
+      return cache.get(key)!;
+    }
+    
+    const result = fn(...args);
+    cache.set(key, result);
+    return result;
+  };
 }
 
+/**
+ * Cache utility with TTL support
+ */
+class CacheWithTTL<T> {
+  private cache = new Map<string, { value: T; timestamp: number; ttl: number }>();
+  
+  set(key: string, value: T, ttl: number = 300000): void { // Default 5 minutes
+    this.cache.set(key, {
+      value,
+      timestamp: Date.now(),
+      ttl
+    });
+  }
+  
+  get(key: string): T | null {
+    const cached = this.cache.get(key);
+    
+    if (!cached) return null;
+    
+    if (Date.now() - cached.timestamp > cached.ttl) {
+      this.cache.delete(key);
+      return null;
+    }
+    
+    return cached.value;
+  }
+  
+  has(key: string): boolean {
+    return this.get(key) !== null;
+  }
+  
+  delete(key: string): void {
+    this.cache.delete(key);
+  }
+  
+  clear(): void {
+    this.cache.clear();
+  }
+  
+  size(): number {
+    return this.cache.size;
+  }
+}
+
+export const createCache = <T>() => new CacheWithTTL<T>();
+
+/**
+ * Optimized batch processor for handling multiple async operations
+ */
+export async function batchProcess<T, R>(
+  items: T[],
+  processor: (item: T) => Promise<R>,
+  batchSize: number = 10,
+  delay: number = 0
+): Promise<R[]> {
+  const results: R[] = [];
+  
+  for (let i = 0; i < items.length; i += batchSize) {
+    const batch = items.slice(i, i + batchSize);
+    const batchResults = await Promise.all(batch.map(processor));
+    results.push(...batchResults);
+    
+    // Optional delay between batches to prevent overwhelming the system
+    if (delay > 0 && i + batchSize < items.length) {
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
+  
+  return results;
+}
+
+/**
+ * Performance monitoring utility
+ */
+export class PerformanceMonitor {
+  private static measurements = new Map<string, number[]>();
+  
+  static start(label: string): void {
+    performance.mark(`${label}-start`);
+  }
+  
+  static end(label: string): number {
+    performance.mark(`${label}-end`);
+    performance.measure(label, `${label}-start`, `${label}-end`);
+    
+    const measure = performance.getEntriesByName(label)[0];
+    const duration = measure.duration;
+    
+    if (!this.measurements.has(label)) {
+      this.measurements.set(label, []);
+    }
+    
+    this.measurements.get(label)!.push(duration);
+    
+    // Clean up marks and measures
+    performance.clearMarks(`${label}-start`);
+    performance.clearMarks(`${label}-end`);
+    performance.clearMeasures(label);
+    
+    return duration;
+  }
+  
+  static getAverageTime(label: string): number {
+    const times = this.measurements.get(label) || [];
+    return times.length > 0 ? times.reduce((a, b) => a + b, 0) / times.length : 0;
+  }
+  
+  static getTotalCalls(label: string): number {
+    return this.measurements.get(label)?.length || 0;
+  }
+  
+  static reset(label?: string): void {
+    if (label) {
+      this.measurements.delete(label);
+    } else {
+      this.measurements.clear();
+    }
+  }
+}
+
+/**
+ * Utility to measure and log performance of async functions
+ */
+export function withPerformanceLogging<T extends (...args: any[]) => Promise<any>>(
+  fn: T,
+  label: string
+): T {
+  return (async (...args: Parameters<T>) => {
+    PerformanceMonitor.start(label);
+    try {
+      const result = await fn(...args);
+      const duration = PerformanceMonitor.end(label);
+      
+      if (duration > 1000) { // Log slow operations (> 1 second)
+        console.warn(`⚠️ Slow operation detected: ${label} took ${duration.toFixed(2)}ms`);
+      }
+      
+      return result;
+    } catch (error) {
+      PerformanceMonitor.end(label);
+      throw error;
+    }
+  }) as T;
+}
+
+/**
+ * Optimized deep comparison utility
+ */
+export function deepEqual(obj1: any, obj2: any): boolean {
+  if (obj1 === obj2) return true;
+  
+  if (obj1 == null || obj2 == null) return false;
+  
+  if (typeof obj1 !== typeof obj2) return false;
+  
+  if (typeof obj1 !== 'object') return obj1 === obj2;
+  
+  const keys1 = Object.keys(obj1);
+  const keys2 = Object.keys(obj2);
+  
+  if (keys1.length !== keys2.length) return false;
+  
+  for (const key of keys1) {
+    if (!keys2.includes(key)) return false;
+    if (!deepEqual(obj1[key], obj2[key])) return false;
+  }
+  
+  return true;
+}
+
+/**
+ * Utility for audit log action formatting
+ */
 export function formatAuditAction(action: string): string {
-  // Convert from UPPER_SNAKE_CASE to Title Case and handle special cases
-  const actionMap: Record<string, string> = {
-    // Tenant-related actions
-    'TENANT_MOVE_IN': 'Added New Tenant',
-    'TENANT_MOVE_OUT_PHASE_1': 'Started Tenant Archive Process',
-    'TENANT_MOVE_OUT_PHASE_2': 'Completed Tenant Archive',
-    'TENANT_UPDATED': 'Updated Tenant Information',
-    'TENANT_CONTRACT_RENEWED': 'Renewed Tenant Contract',
+  return action
+    .split('_')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+}
 
-    // Bill-related actions
-    'BILL_GENERATED': 'Generated New Bill',
-    'BILL_MODIFIED': 'Modified Bill Details',
-    'PAYMENT_RECORDED': 'Recorded Payment',
-
-    // Settings and configuration
-    'SETTINGS_CHANGED': 'Updated System Settings',
-    'BRANCH_RATES_CHANGED': 'Updated Branch Rates',
-
-    // Branch management
-    'BRANCH_CREATED': 'Created New Branch',
-    'BRANCH_UPDATED': 'Updated Branch Details',
-    'BRANCH_DELETED': 'Deleted Branch',
-
-    // Room management
-    'ROOM_CREATED': 'Created New Room',
-    'ROOM_UPDATED': 'Updated Room Details',
-    'ROOM_DELETED': 'Deleted Room',
-
-    // Expense management
-    'EXPENSE_CREATED': 'Created New Expense',
-    'EXPENSE_UPDATED': 'Updated Expense Details',
-    'EXPENSE_DELETED': 'Deleted Expense',
-
-    // User management
-    'USER_CREATED': 'Created New User Account',
-    'USER_UPDATED': 'Updated User Account',
-    'USER_DELETED': 'Deleted User Account',
-
-    // Authentication events
-    'AUTH_LOGIN': 'Logged In',
-    'AUTH_LOGOUT': 'Logged Out',
-    'AUTH_PASSWORD_CHANGE': 'Changed Password',
-    'AUTH_EMAIL_CHANGE': 'Changed Email Address'
-  };
-
-  // Return mapped value if exists, otherwise convert from UPPER_SNAKE_CASE to Title Case
-  return actionMap[action] || action.split('_').map(word => 
-    word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
-  ).join(' ');
-} 
+ 

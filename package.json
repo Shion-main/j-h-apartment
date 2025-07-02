@@ -3,13 +3,24 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev --turbo",
     "build": "next build",
+    "build:analyze": "ANALYZE=true next build",
+    "build:production": "NODE_ENV=production next build && next export",
     "start": "next start",
+    "start:production": "NODE_ENV=production next start",
     "lint": "next lint --fix --ext .js,.jsx,.ts,.tsx .",
-    "type-check": "tsc --noEmit"
+    "lint:strict": "next lint --max-warnings 0",
+    "type-check": "tsc --noEmit",
+    "type-check:watch": "tsc --noEmit --watch",
+    "clean": "rm -rf .next out node_modules/.cache",
+    "precommit": "npm run lint && npm run type-check",
+    "performance:audit": "npx lighthouse http://localhost:3000 --output html --output-path ./performance-report.html",
+    "bundle:analyze": "npx @next/bundle-analyzer"
   },
   "dependencies": {
+    "@fontsource/jetbrains-mono": "^5.2.6",
+    "@fontsource/plus-jakarta-sans": "^5.2.6",
     "@heroicons/react": "^2.2.0",
     "@hookform/resolvers": "^3.10.0",
     "@radix-ui/react-alert-dialog": "^1.0.5",
@@ -51,6 +62,7 @@
     "zod": "^3.25.67"
   },
   "devDependencies": {
+    "@next/bundle-analyzer": "^14.0.4",
     "@types/node": "^20.10.5",
     "@types/react": "^18.2.45",
     "@types/react-dom": "^18.2.18",
@@ -61,5 +73,21 @@
     "supabase": "^2.26.9",
     "tailwindcss": "^3.4.0",
     "typescript": "^5.3.3"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=8.0.0"
+  },
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
   }
 }

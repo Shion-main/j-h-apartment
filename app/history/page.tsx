@@ -22,6 +22,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { formatCurrency, formatDate, formatAuditAction, formatTimestamp } from '@/lib/utils';
+import { usePageTitleEffect } from '@/lib/hooks/usePageTitleEffect';
 import type { Bill, Tenant, AuditLog } from '@/types/database';
 import { 
   History as HistoryIcon,
@@ -50,6 +51,9 @@ import {
 type HistoryTab = 'audit-logs' | 'paid-bills' | 'moved-out-tenants';
 
 export default function HistoryPage() {
+  // Set page title and subtitle
+  usePageTitleEffect('History', 'Comprehensive historical data and audit trails');
+  
   const [activeTab, setActiveTab] = useState<HistoryTab>('audit-logs');
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -327,48 +331,48 @@ export default function HistoryPage() {
   // Update the audit logs table to make the View Details button clickable
   const renderAuditLogsTable = () => {
     return (
-      <div className="rounded-md border">
-        <div className="max-h-[600px] overflow-y-auto">
+      <div className="table-container flex-1">
+        <div className="table-scroll">
           <Table>
-            <TableHeader className="sticky top-0 bg-white z-10">
+            <TableHeader className="table-header-normal">
               <TableRow>
-                <TableHead>Timestamp</TableHead>
-                <TableHead>User</TableHead>
-                <TableHead>Action</TableHead>
-                <TableHead>Target</TableHead>
-                <TableHead className="text-right">Changes</TableHead>
+                <TableHead className="min-w-[150px]">Timestamp</TableHead>
+                <TableHead className="min-w-[120px]">User</TableHead>
+                <TableHead className="min-w-[100px]">Action</TableHead>
+                <TableHead className="min-w-[100px]">Target</TableHead>
+                <TableHead className="text-right min-w-[120px]">Changes</TableHead>
               </TableRow>
             </TableHeader>
-          <TableBody>
-            {filteredAuditLogs.length > 0 ? (
-              filteredAuditLogs.map((log) => (
-                <TableRow key={log.id}>
-                  <TableCell>{formatTimestamp(log.timestamp)}</TableCell>
-                  <TableCell>{(log as any).user_display_name || 'System'}</TableCell>
-                  <TableCell>{formatAuditAction(log.action)}</TableCell>
-                  <TableCell>{formatTargetTable(log.target_table)}</TableCell>
-                  <TableCell className="text-right">
-                    <Button 
-                      variant="outline" 
-                      size="sm"
-                      onClick={() => handleViewDetails(log)}
-                      className="flex items-center gap-1"
-                    >
-                      <Eye className="h-3.5 w-3.5" />
-                      View Details
-                    </Button>
+            <TableBody>
+              {filteredAuditLogs.length > 0 ? (
+                filteredAuditLogs.map((log) => (
+                  <TableRow key={log.id}>
+                    <TableCell className="min-w-[150px] table-cell-nowrap">{formatTimestamp(log.timestamp)}</TableCell>
+                    <TableCell className="min-w-[120px] table-cell-nowrap">{(log as any).user_display_name || 'System'}</TableCell>
+                    <TableCell className="min-w-[100px] table-cell-nowrap">{formatAuditAction(log.action)}</TableCell>
+                    <TableCell className="min-w-[100px] table-cell-nowrap">{formatTargetTable(log.target_table)}</TableCell>
+                    <TableCell className="text-right min-w-[120px]">
+                      <Button 
+                        variant="outline" 
+                        size="sm"
+                        onClick={() => handleViewDetails(log)}
+                        className="flex items-center gap-1"
+                      >
+                        <Eye className="h-3.5 w-3.5" />
+                        View Details
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))
+              ) : (
+                <TableRow>
+                  <TableCell colSpan={5} className="h-24 text-center">
+                    No audit logs found.
                   </TableCell>
                 </TableRow>
-              ))
-            ) : (
-              <TableRow>
-                <TableCell colSpan={5} className="h-24 text-center">
-                  No audit logs found.
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
+              )}
+            </TableBody>
+          </Table>
         </div>
       </div>
     );
@@ -377,70 +381,115 @@ export default function HistoryPage() {
   // Update the paid bills section to include branch info and view details button
   const renderPaidBillsTable = () => {
     return (
-      <div className="rounded-md border">
-        <div className="max-h-[600px] overflow-y-auto">
+      <div className="table-container flex-1">
+        <div className="table-scroll">
           <Table>
-            <TableHeader className="sticky top-0 bg-white z-10">
-            <TableRow>
-              <TableHead>Billing Period</TableHead>
-              <TableHead>Tenant</TableHead>
-              <TableHead>Total Amount</TableHead>
-              <TableHead>Date Paid</TableHead>
-              <TableHead className="text-right">Details</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {filteredPaidBills.length > 0 ? (
-              filteredPaidBills.map((bill) => {
-                // Find the latest payment date (for fully paid bills)
-                const payments = bill.payments || [];
-                const latestPayment = payments.length > 0 
-                  ? payments.sort((a, b) => 
-                      new Date(b.payment_date).getTime() - new Date(a.payment_date).getTime()
-                    )[0]
-                  : null;
-                
-                return (
-                  <TableRow key={bill.id}>
-                    <TableCell>{formatDate(bill.billing_period_start)} - {formatDate(bill.billing_period_end)}</TableCell>
-                    <TableCell>
-                      <div className="font-medium">{(bill as any).tenants?.full_name}</div>
-                      <div className="text-sm text-muted-foreground flex items-center gap-1">
-                        <Building2 className="h-3 w-3" />
-                        {(bill as any).tenants?.rooms?.branches?.name || 'Unknown Branch'}
-                      </div>
-                      <div className="text-sm text-muted-foreground flex items-center gap-1">
-                        <Home className="h-3 w-3" />
-                        Room {(bill as any).tenants?.rooms?.room_number || 'Unknown'}
-                      </div>
-                    </TableCell>
-                    <TableCell>{formatCurrency(bill.total_amount_due)}</TableCell>
-                    <TableCell>
-                      {latestPayment ? formatDate(latestPayment.payment_date) : 'N/A'}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Button 
-                        variant="outline" 
-                        size="sm" 
-                        onClick={() => handleViewBillDetails(bill)}
-                        className="flex items-center gap-1"
-                      >
-                        <Eye className="h-3.5 w-3.5" />
-                        View Details
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                );
-              })
-            ) : (
+            <TableHeader className="table-header-normal">
               <TableRow>
-                <TableCell colSpan={5} className="h-24 text-center">
-                  No paid bills found.
-                </TableCell>
+                <TableHead className="min-w-[150px]">Billing Period</TableHead>
+                <TableHead className="min-w-[200px]">Tenant</TableHead>
+                <TableHead className="min-w-[120px]">Total Amount</TableHead>
+                <TableHead className="min-w-[120px]">Date Paid</TableHead>
+                <TableHead className="text-right min-w-[120px]">Details</TableHead>
               </TableRow>
-            )}
-          </TableBody>
-        </Table>
+            </TableHeader>
+            <TableBody>
+              {filteredPaidBills.length > 0 ? (
+                filteredPaidBills.map((bill) => {
+                  // Find the latest payment date (for fully paid bills)
+                  const payments = bill.payments || [];
+                  const latestPayment = payments.length > 0 
+                    ? payments.sort((a, b) => 
+                        new Date(b.payment_date).getTime() - new Date(a.payment_date).getTime()
+                      )[0]
+                    : null;
+                  
+                  return (
+                    <TableRow key={bill.id}>
+                      <TableCell className="min-w-[150px] table-cell-nowrap">{formatDate(bill.billing_period_start)} - {formatDate(bill.billing_period_end)}</TableCell>
+                      <TableCell className="min-w-[200px]">
+                        <div className="font-medium">{(bill as any).tenants?.full_name}</div>
+                        <div className="text-sm text-muted-foreground flex items-center gap-1">
+                          <Building2 className="h-3 w-3" />
+                          {(bill as any).tenants?.rooms?.branches?.name || 'Unknown Branch'}
+                        </div>
+                        <div className="text-sm text-muted-foreground flex items-center gap-1">
+                          <Home className="h-3 w-3" />
+                          Room {(bill as any).tenants?.rooms?.room_number || 'Unknown'}
+                        </div>
+                      </TableCell>
+                      <TableCell className="min-w-[120px]">{formatCurrency(bill.total_amount_due)}</TableCell>
+                      <TableCell className="min-w-[120px] table-cell-nowrap">
+                        {latestPayment ? formatDate(latestPayment.payment_date) : 'N/A'}
+                      </TableCell>
+                      <TableCell className="text-right min-w-[120px]">
+                        <Button 
+                          variant="outline" 
+                          size="sm" 
+                          onClick={() => handleViewBillDetails(bill)}
+                          className="flex items-center gap-1"
+                        >
+                          <Eye className="h-3.5 w-3.5" />
+                          View Details
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
+              ) : (
+                <TableRow>
+                  <TableCell colSpan={5} className="h-24 text-center">
+                    No paid bills found.
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      </div>
+    );
+  };
+
+  const renderMovedOutTenantsTable = () => {
+    return (
+      <div className="table-container flex-1">
+        <div className="table-scroll">
+          <Table>
+            <TableHeader className="table-header-normal">
+              <TableRow>
+                <TableHead className="min-w-[200px]">Tenant</TableHead>
+                <TableHead className="min-w-[150px]">Last Room</TableHead>
+                <TableHead className="min-w-[200px]">Contract Dates</TableHead>
+                <TableHead className="min-w-[120px]">Move-Out Date</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filteredMovedOutTenants.length > 0 ? (
+                filteredMovedOutTenants.map((tenant) => (
+                  <TableRow key={tenant.id}>
+                    <TableCell className="min-w-[200px]">
+                      <div className="font-medium">{tenant.full_name}</div>
+                      <div className="text-sm text-muted-foreground table-cell-nowrap">{tenant.email_address}</div>
+                    </TableCell>
+                    <TableCell className="min-w-[150px]">
+                      <div>Room {(tenant as any).rooms?.room_number || 'N/A'}</div>
+                      <div className="text-sm text-muted-foreground">
+                        {(tenant as any).rooms?.branches?.name || 'Unknown Branch'}
+                      </div>
+                    </TableCell>
+                    <TableCell className="min-w-[200px] table-cell-nowrap">{formatDate(tenant.contract_start_date)} - {formatDate(tenant.contract_end_date)}</TableCell>
+                    <TableCell className="min-w-[120px] table-cell-nowrap">{formatDate(tenant.move_out_date)}</TableCell>
+                  </TableRow>
+                ))
+              ) : (
+                <TableRow>
+                  <TableCell colSpan={4} className="h-24 text-center">
+                    No moved-out tenants found.
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
         </div>
       </div>
     );
@@ -458,13 +507,13 @@ export default function HistoryPage() {
     switch (activeTab) {
       case 'audit-logs':
         return (
-          <Card>
-            <CardHeader>
+          <Card className="flex flex-col h-[600px]">
+            <CardHeader className="flex-shrink-0">
               <CardTitle>System Activity Logs</CardTitle>
               <CardDescription>Comprehensive audit trail of all system activities.</CardDescription>
             </CardHeader>
-            <CardContent>
-              <div className="flex flex-col sm:flex-row gap-4 mb-6">
+            <CardContent className="flex-1 flex flex-col min-h-0 p-6">
+              <div className="flex flex-col sm:flex-row gap-4 mb-6 flex-shrink-0">
                 <div className="flex-1">
                   <div className="relative">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -496,19 +545,21 @@ export default function HistoryPage() {
                   onChange={(e) => setDateFilter(e.target.value)}
                 />
               </div>
-              {renderAuditLogsTable()}
+              <div className="flex-1 min-h-0">
+                {renderAuditLogsTable()}
+              </div>
             </CardContent>
           </Card>
         );
       case 'paid-bills':
         return (
-          <Card>
-            <CardHeader>
+          <Card className="flex flex-col h-[600px]">
+            <CardHeader className="flex-shrink-0">
               <CardTitle>Paid Bills History</CardTitle>
               <CardDescription>Records of all fully settled bills.</CardDescription>
             </CardHeader>
-            <CardContent>
-              <div className="flex items-center mb-6">
+            <CardContent className="flex-1 flex flex-col min-h-0 p-6">
+              <div className="flex items-center mb-6 flex-shrink-0">
                 <div className="relative flex-1">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                   <Input 
@@ -519,19 +570,21 @@ export default function HistoryPage() {
                   />
                 </div>
               </div>
-              {renderPaidBillsTable()}
+              <div className="flex-1 min-h-0">
+                {renderPaidBillsTable()}
+              </div>
             </CardContent>
           </Card>
         );
       case 'moved-out-tenants':
         return (
-          <Card>
-            <CardHeader>
+          <Card className="flex flex-col h-[600px]">
+            <CardHeader className="flex-shrink-0">
               <CardTitle>Moved-Out Tenant History</CardTitle>
               <CardDescription>Records of all tenants who have moved out.</CardDescription>
             </CardHeader>
-            <CardContent>
-              <div className="flex items-center mb-6">
+            <CardContent className="flex-1 flex flex-col min-h-0 p-6">
+              <div className="flex items-center mb-6 flex-shrink-0">
                 <div className="relative flex-1">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                   <Input 
@@ -542,45 +595,8 @@ export default function HistoryPage() {
                   />
                 </div>
               </div>
-              <div className="rounded-md border">
-                <div className="max-h-[600px] overflow-y-auto">
-                  <Table>
-                    <TableHeader className="sticky top-0 bg-white z-10">
-                      <TableRow>
-                        <TableHead>Tenant</TableHead>
-                        <TableHead>Last Room</TableHead>
-                        <TableHead>Contract Dates</TableHead>
-                        <TableHead>Move-Out Date</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                  <TableBody>
-                    {filteredMovedOutTenants.length > 0 ? (
-                      filteredMovedOutTenants.map((tenant) => (
-                        <TableRow key={tenant.id}>
-                          <TableCell>
-                            <div className="font-medium">{tenant.full_name}</div>
-                            <div className="text-sm text-muted-foreground">{tenant.email_address}</div>
-                          </TableCell>
-                          <TableCell>
-                            <div>Room {(tenant as any).rooms?.room_number || 'N/A'}</div>
-                            <div className="text-sm text-muted-foreground">
-                              {(tenant as any).rooms?.branches?.name || 'Unknown Branch'}
-                            </div>
-                          </TableCell>
-                          <TableCell>{formatDate(tenant.contract_start_date)} - {formatDate(tenant.contract_end_date)}</TableCell>
-                          <TableCell>{formatDate(tenant.move_out_date)}</TableCell>
-                        </TableRow>
-                      ))
-                    ) : (
-                      <TableRow>
-                        <TableCell colSpan={4} className="h-24 text-center">
-                          No moved-out tenants found.
-                        </TableCell>
-                      </TableRow>
-                    )}
-                  </TableBody>
-                </Table>
-                </div>
+              <div className="flex-1 min-h-0">
+                {renderMovedOutTenantsTable()}
               </div>
             </CardContent>
           </Card>
@@ -591,13 +607,10 @@ export default function HistoryPage() {
   };
 
   return (
-    <div className="space-y-4 sm:space-y-6 px-3 sm:px-0">
+    <div className="flex flex-col h-[calc(100vh-100px)] px-3 sm:px-0">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">History</h1>
-          <p className="text-muted-foreground text-sm sm:text-base">
-            Comprehensive historical data and audit trails
-          </p>
+        <div className="flex-1">
+          {/* Title now shown in header */}
         </div>
       </div>
       <div className="border-b">
@@ -637,7 +650,7 @@ export default function HistoryPage() {
           </button>
         </div>
       </div>
-      <div>{renderContent()}</div>
+      <div className="flex-grow py-4 overflow-y-hidden">{renderContent()}</div>
 
       {/* Audit Log Details Dialog */}
       <Dialog open={isDetailsOpen} onOpenChange={setIsDetailsOpen}>

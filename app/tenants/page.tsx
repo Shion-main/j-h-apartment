@@ -34,6 +34,7 @@ import {
 } from 'lucide-react';
 import { logAuditEvent } from '@/lib/audit/logger';
 import { getSupabaseClient, invalidateCache } from '@/lib/supabase/client';
+import { usePageTitleEffect } from '@/lib/hooks/usePageTitleEffect';
 import { z } from 'zod';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -42,7 +43,6 @@ const editTenantSchema = z.object({
   full_name: z.string().min(2, 'Full name is required'),
   email_address: z.string().email('Invalid email address'),
   phone_number: z.string().min(1, 'Phone number is required'),
-  room_id: z.string().uuid('A room must be selected'),
 });
 type EditTenantFormData = z.infer<typeof editTenantSchema>;
 
@@ -63,6 +63,9 @@ interface TenantWithBilling extends Tenant {
 }
 
 export default function TenantsPage() {
+  // Set page title and subtitle
+  usePageTitleEffect('Tenants', 'Manage active tenant information and move-in processes');
+  
   const supabase = getSupabaseClient();
   const { addToast } = useToast();
   const [tenants, setTenants] = useState<Tenant[]>([]);
@@ -89,7 +92,7 @@ export default function TenantsPage() {
     email_address: '',
     room_id: '',
     rent_start_date: '',
-    initial_electricity_reading: 0,
+    initial_electricity_reading: '',
     advance_payment_received: false,
     security_deposit_received: false
   });
@@ -270,94 +273,67 @@ export default function TenantsPage() {
     setIsSubmitting(true);
 
     try {
+      // Prepare data for validation
+      const dataToValidate = {
+        ...formData,
+        initial_electricity_reading: formData.initial_electricity_reading === '' ? 0 : Number(formData.initial_electricity_reading)
+      };
+
       // Validate form data
-      const { error: validationError } = validateSchema(tenantMoveInSchema, formData);
+      const { error: validationError } = validateSchema(tenantMoveInSchema, dataToValidate);
       if (validationError) {
         addToast({
           type: 'error',
-          title: 'Validation Error',
-          message: validationError,
-          duration: 5000
+          title: 'Invalid Input',
+          message: typeof validationError === 'string' ? validationError : 'Please check your input and try again'
         });
-        setIsSubmitting(false);
         return;
       }
 
+      // Make API request
       const response = await fetch('/api/tenants', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(dataToValidate)
       });
 
       const result = await response.json();
 
       if (result.success) {
+        addToast({
+          type: 'success',
+          title: 'Success',
+          message: 'Tenant added successfully'
+        });
+
         // Reset form and close dialog
+        setIsAddDialogOpen(false);
+        setAddTenantBranchId(null);
         setFormData({
           full_name: '',
           phone_number: '',
           email_address: '',
           room_id: '',
           rent_start_date: '',
-          initial_electricity_reading: 0,
+          initial_electricity_reading: '',
           advance_payment_received: false,
           security_deposit_received: false
         });
-        setAddTenantBranchId(null); // Reset branch selection
-        setIsAddDialogOpen(false);
-        
-        // Show success toast
-        addToast({
-          type: 'success',
-          title: 'Success',
-          message: 'New tenant has been successfully added.',
-          duration: 5000
-        });
-        
-        // Invalidate caches and refresh data
-        invalidateCache('tenants');
-        invalidateCache('rooms');
-        invalidateCache('available-rooms');
-        
-        await fetchTenants();
-        await fetchAvailableRooms();
 
-        // Log the move-in event
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user && result.data) {
-          await logAuditEvent(
-            supabase,
-            user.id,
-            'TENANT_MOVE_IN',
-            'tenants',
-            result.data.id,
-            null,
-            {
-              full_name: result.data.full_name,
-              email_address: result.data.email_address,
-              phone_number: result.data.phone_number,
-              room_id: result.data.room_id,
-              rent_start_date: result.data.rent_start_date,
-              initial_electricity_reading: result.data.initial_electricity_reading,
-            }
-          );
-        }
+        // Refresh data
+        fetchTenants();
+        fetchAvailableRooms();
       } else {
-        // Show error toast with specific message
-        addToast({
-          type: 'error',
-          title: 'Error',
-          message: result.error || 'An unexpected error occurred. Please try again.',
-          duration: 7000
-        });
+        throw new Error(result.error || 'Failed to add tenant');
       }
     } catch (error) {
       console.error('Error adding tenant:', error);
       addToast({
         type: 'error',
         title: 'Error',
-        message: 'Failed to process your request. Please try again later.',
-        duration: 7000
+        message: error instanceof Error ? error.message : 'Failed to add tenant'
       });
     } finally {
       setIsSubmitting(false);
@@ -366,21 +342,12 @@ export default function TenantsPage() {
 
   const handleEditTenantClick = async (tenant: Tenant) => {
     setEditingTenant(tenant);
+    // Reset form with only editable fields
     resetEdit({
       full_name: tenant.full_name,
       email_address: tenant.email_address,
-      phone_number: tenant.phone_number,
-      room_id: tenant.room_id || '',
+      phone_number: tenant.phone_number
     });
-    
-    // Fetch all rooms that are not occupied OR are occupied by the current tenant
-    const { data, error } = await supabase
-      .from('rooms')
-      .select('*, branches(name)')
-      .or(`is_occupied.eq.false,id.eq.${tenant.room_id}`);
-      
-    if (data) setAvailableRoomsForRelocation(data);
-    
     setIsEditDialogOpen(true);
   };
 
@@ -626,9 +593,6 @@ export default function TenantsPage() {
   if (isLoading) {
     return (
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <h1 className="text-3xl font-bold tracking-tight">Tenants</h1>
-        </div>
         <div className="flex items-center justify-center py-12">
           <Loader2 className="h-8 w-8 animate-spin" />
         </div>
@@ -640,11 +604,8 @@ export default function TenantsPage() {
     <div className="space-y-4 sm:space-y-6 px-3 sm:px-0">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Tenants</h1>
-          <p className="text-muted-foreground text-sm sm:text-base">
-            Manage active tenant information and move-in processes
-          </p>
+        <div className="flex-1">
+          {/* Title now shown in header */}
         </div>
         
         <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
@@ -797,7 +758,7 @@ export default function TenantsPage() {
                         const value = e.target.value;
                         setFormData({
                           ...formData,
-                          initial_electricity_reading: value === '' ? 0 : Number(value)
+                          initial_electricity_reading: value
                         });
                       }}
                       min="0"
@@ -819,7 +780,7 @@ export default function TenantsPage() {
                         <div className="flex items-center justify-between">
                           <div>
                             <Label className="text-blue-900">Advance Payment</Label>
-                            <p className="text-sm text-blue-700">First month's rent payment</p>
+                            <p className="text-sm text-blue-700">Holding deposit equal to one month's rent</p>
                           </div>
                           <div className="flex items-center space-x-2">
                             <input
@@ -839,7 +800,7 @@ export default function TenantsPage() {
                         <div className="flex items-center justify-between">
                           <div>
                             <Label className="text-blue-900">Security Deposit</Label>
-                            <p className="text-sm text-blue-700">Refundable based on contract terms</p>
+                            <p className="text-sm text-blue-700">Holding deposit equal to one month's rent (refundable based on contract terms)</p>
                           </div>
                           <div className="flex items-center space-x-2">
                             <input
@@ -889,7 +850,7 @@ export default function TenantsPage() {
                     email_address: '',
                     room_id: '',
                     rent_start_date: '',
-                    initial_electricity_reading: 0,
+                    initial_electricity_reading: '',
                     advance_payment_received: false,
                     security_deposit_received: false
                   });
@@ -1061,57 +1022,63 @@ export default function TenantsPage() {
         </CardContent>
       </Card>
 
-      {editingTenant && (
-        <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-          <DialogContent className="sm:max-w-[425px]">
-            <DialogHeader>
-              <DialogTitle>Edit Tenant: {editingTenant.full_name}</DialogTitle>
-              <DialogDescription>Update tenant details or relocate them to a new room.</DialogDescription>
-            </DialogHeader>
-            <form onSubmit={handleSubmitEdit(handleUpdateTenant)} className="grid gap-4 py-4">
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="full_name" className="text-right">Full Name</Label>
-                <Input id="full_name" {...registerEdit('full_name')} className="col-span-3" />
-                {editErrors.full_name && <p className="col-span-4 text-red-500 text-sm">{editErrors.full_name.message}</p>}
-              </div>
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="email_address" className="text-right">Email</Label>
-                <Input id="email_address" {...registerEdit('email_address')} className="col-span-3" />
-                {editErrors.email_address && <p className="col-span-4 text-red-500 text-sm">{editErrors.email_address.message}</p>}
-              </div>
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="phone_number" className="text-right">Phone</Label>
-                <Input id="phone_number" {...registerEdit('phone_number')} className="col-span-3" />
-                {editErrors.phone_number && <p className="col-span-4 text-red-500 text-sm">{editErrors.phone_number.message}</p>}
-              </div>
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="room_id" className="text-right">Room</Label>
-                <div className="col-span-3">
-                  <Select onValueChange={(value) => setEditValue('room_id', value)} defaultValue={editingTenant.room_id || undefined}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select a new room" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {availableRoomsForRelocation.map(room => (
-                        <SelectItem key={room.id} value={room.id}>
-                          {room.branch?.name} - {room.room_number} {room.id === editingTenant.room_id ? '(Current)' : ''}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  {editErrors.room_id && <p className="text-red-500 text-sm mt-1">{editErrors.room_id.message}</p>}
-                </div>
-              </div>
-              <DialogFooter>
-                <DialogClose asChild>
-                  <Button type="button" variant="secondary">Cancel</Button>
-                </DialogClose>
-                <Button type="submit">Save Changes</Button>
-              </DialogFooter>
-            </form>
-          </DialogContent>
-        </Dialog>
-      )}
+      {/* Edit Tenant Dialog */}
+      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Tenant: {editingTenant?.full_name}</DialogTitle>
+            <DialogDescription>
+              Update tenant's personal information. Room changes must be done through the room transfer process.
+            </DialogDescription>
+          </DialogHeader>
+
+          <form onSubmit={handleSubmitEdit(handleUpdateTenant)} className="space-y-4">
+            <div>
+              <Label htmlFor="full_name">Full Name</Label>
+              <Input
+                id="full_name"
+                {...registerEdit('full_name')}
+                className={editErrors.full_name ? 'border-red-500' : ''}
+              />
+              {editErrors.full_name && (
+                <p className="text-sm text-red-500">{editErrors.full_name.message}</p>
+              )}
+            </div>
+
+            <div>
+              <Label htmlFor="email_address">Email Address</Label>
+              <Input
+                id="email_address"
+                type="email"
+                {...registerEdit('email_address')}
+                className={editErrors.email_address ? 'border-red-500' : ''}
+              />
+              {editErrors.email_address && (
+                <p className="text-sm text-red-500">{editErrors.email_address.message}</p>
+              )}
+            </div>
+
+            <div>
+              <Label htmlFor="phone_number">Phone Number</Label>
+              <Input
+                id="phone_number"
+                {...registerEdit('phone_number')}
+                className={editErrors.phone_number ? 'border-red-500' : ''}
+              />
+              {editErrors.phone_number && (
+                <p className="text-sm text-red-500">{editErrors.phone_number.message}</p>
+              )}
+            </div>
+
+            <DialogFooter>
+              <Button variant="outline" type="button" onClick={() => setIsEditDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="submit">Save Changes</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       {isMoveOutDialogOpen && moveOutTenant && (
         <Dialog open={isMoveOutDialogOpen} onOpenChange={setIsMoveOutDialogOpen}>

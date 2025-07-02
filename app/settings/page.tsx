@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/components/ui/toast';
+import { usePageTitleEffect } from '@/lib/hooks/usePageTitleEffect';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { 
   Settings as SettingsIcon, 
@@ -18,6 +19,9 @@ import {
 } from 'lucide-react';
 
 export default function SettingsPage() {
+  // Set page title and subtitle
+  usePageTitleEffect('Settings', 'Configure system-wide settings and business rules');
+  
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const { addToast } = useToast();
@@ -126,14 +130,8 @@ export default function SettingsPage() {
     <div className="space-y-6 sm:space-y-8 max-w-4xl mx-auto px-3 sm:px-0">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight flex items-center">
-             <SettingsIcon className="h-6 w-6 sm:h-8 sm:w-8 text-primary mr-3" />
-            Settings
-          </h1>
-          <p className="text-muted-foreground mt-1 text-sm sm:text-base">
-            Configure system-wide settings and business rules
-          </p>
+        <div className="flex-1">
+          {/* Title now shown in header */}
         </div>
       </div>
 

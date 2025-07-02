@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useCallback, memo } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -11,8 +11,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/components/ui/toast';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { billGenerationSchema, paymentRecordSchema, billEditSchema, validateSchema } from '@/lib/validations/schemas';
-import type { Bill, Tenant, BillGenerationForm, BillEditForm } from '@/types/database';
+import type { Bill, Tenant, Branch, BillGenerationForm, BillEditForm } from '@/types/database';
 import { calculateBillingPeriod } from '@/lib/calculations/billing';
+import { usePageTitleEffect } from '@/lib/hooks/usePageTitleEffect';
 import { 
   Receipt, 
   Plus, 
@@ -89,16 +90,274 @@ interface PaymentForm {
   notes: string;
 }
 
+// Memoized components to prevent unnecessary re-renders
+const TenantBillingRow = memo(({ 
+  tenant, 
+  onGenerateBill, 
+  getStatusColor, 
+  getStatusText, 
+  getActionButtonText, 
+  getActionButtonColor 
+}: {
+  tenant: TenantWithBilling;
+  onGenerateBill: (tenant: TenantWithBilling) => void;
+  getStatusColor: (status: string) => string;
+  getStatusText: (tenant: TenantWithBilling) => string;
+  getActionButtonText: (tenant: TenantWithBilling) => string;
+  getActionButtonColor: (tenant: TenantWithBilling) => string;
+}) => (
+  <tr className="hover:bg-gray-50 transition-colors">
+    <td className="px-4 py-3">
+      <div className="font-medium text-gray-900">{tenant.full_name}</div>
+      <div className="text-sm text-gray-500">{tenant.phone_number}</div>
+    </td>
+    <td className="px-4 py-3">
+      <div className="text-sm text-gray-900">
+        {tenant.rooms?.room_number || 'N/A'}
+      </div>
+      <div className="text-xs text-gray-500">
+        {tenant.rooms?.branches?.name || 'N/A'}
+      </div>
+    </td>
+    <td className="px-4 py-3">
+      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(tenant.billing_status)}`}>
+        {getStatusText(tenant)}
+      </span>
+    </td>
+    <td className="px-4 py-3">
+      {tenant.current_cycle_start && tenant.current_cycle_end ? (
+        <div className="text-sm text-gray-900">
+          {new Date(tenant.current_cycle_start).toLocaleDateString()} - {new Date(tenant.current_cycle_end).toLocaleDateString()}
+        </div>
+      ) : (
+        <span className="text-gray-400">-</span>
+      )}
+    </td>
+    <td className="px-4 py-3">
+      <Button
+        onClick={() => onGenerateBill(tenant)}
+        size="sm"
+        className={getActionButtonColor(tenant)}
+        disabled={!tenant.can_generate_bill}
+      >
+        {getActionButtonText(tenant)}
+      </Button>
+    </td>
+  </tr>
+));
+
+TenantBillingRow.displayName = 'TenantBillingRow';
+
+// Memoized bill row component
+const BillRow = memo(({ 
+  bill, 
+  formatCurrency, 
+  getBillStatusColor, 
+  getBillStatusText, 
+  onEditBill, 
+  onPaymentDialog 
+}: {
+  bill: BillWithTenant;
+  formatCurrency: (amount: number) => string;
+  getBillStatusColor: (status: string) => string;
+  getBillStatusText: (bill: BillWithTenant) => string;
+  onEditBill: (bill: BillWithTenant) => void;
+  onPaymentDialog: (bill: BillWithTenant) => void;
+}) => (
+  <tr className="hover:bg-gray-50 transition-colors">
+    <td className="px-4 py-3">
+      <div className="font-medium text-gray-900">{bill.tenant?.full_name}</div>
+      <div className="text-sm text-gray-500">{bill.tenant?.rooms?.room_number || 'N/A'}</div>
+    </td>
+    <td className="px-4 py-3">
+      <div className="text-sm text-gray-900">
+        {new Date(bill.billing_period_start).toLocaleDateString()} - {new Date(bill.billing_period_end).toLocaleDateString()}
+      </div>
+    </td>
+    <td className="px-4 py-3">
+      <div className="font-medium text-gray-900">{formatCurrency(bill.total_amount_due)}</div>
+      <div className="text-sm text-gray-500">Paid: {formatCurrency(bill.amount_paid)}</div>
+    </td>
+    <td className="px-4 py-3">
+      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getBillStatusColor(bill.status)}`}>
+        {getBillStatusText(bill)}
+      </span>
+    </td>
+    <td className="px-4 py-3">
+      <div className="flex space-x-2">
+        <Button
+          onClick={() => onEditBill(bill)}
+          size="sm"
+          variant="outline"
+          className="text-blue-600 border-blue-200 hover:bg-blue-50"
+        >
+          Edit
+        </Button>
+        <Button
+          onClick={() => onPaymentDialog(bill)}
+          size="sm"
+          className="bg-green-600 hover:bg-green-700"
+        >
+          Record Payment
+        </Button>
+      </div>
+    </td>
+  </tr>
+));
+
+BillRow.displayName = 'BillRow';
+
 export default function BillingPage() {
-  const supabase = getSupabaseClient();
+  // Set page title and subtitle
+  usePageTitleEffect('Billing', 'Generate bills and record payments');
+
+
+
+  // Memoized Supabase client
+  const supabase = useMemo(() => getSupabaseClient(), []);
+  
+  // Memoized currency formatter
+  const formatCurrency = useCallback((amount: number) => {
+    return new Intl.NumberFormat('en-PH', {
+      style: 'currency',
+      currency: 'PHP',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0
+    }).format(amount);
+  }, []);
+
+  // Memoized utility functions
+  const getStatusColor = useCallback((status: string) => {
+    switch (status) {
+      case 'current': return 'bg-green-100 text-green-800';
+      case 'overdue': return 'bg-red-100 text-red-800';
+      default: return 'bg-gray-100 text-gray-800';
+    }
+  }, []);
+
+  const getBillStatusColor = useCallback((status: string) => {
+    switch (status) {
+      case 'fully_paid': return 'bg-green-100 text-green-800';
+      case 'partially_paid': return 'bg-yellow-100 text-yellow-800';
+      case 'active': return 'bg-blue-100 text-blue-800';
+      default: return 'bg-gray-100 text-gray-800';
+    }
+  }, []);
+
+  // Optimized tenant processing with memoization
+  const processTenantsWithBilling = useCallback(async (tenantsData: Tenant[]): Promise<TenantWithBilling[]> => {
+    // Process tenants in batches to improve performance
+    const batchSize = 10;
+    const results: TenantWithBilling[] = [];
+    
+    for (let i = 0; i < tenantsData.length; i += batchSize) {
+      const batch = tenantsData.slice(i, i + batchSize);
+      
+      const batchPromises = batch.map(async (tenant: Tenant) => {
+        try {
+          // Fetch all bills for this tenant
+          const allBillsResponse = await fetch(`/api/bills?tenant_id=${tenant.id}`);
+          const allBillsResult = await allBillsResponse.json();
+          
+          const allBills = allBillsResult.success && allBillsResult.data ? allBillsResult.data : [];
+          const fullyPaidBillsCount = allBills.filter((b: any) => b.status === 'fully_paid').length;
+          
+          // Calculate billing status efficiently
+          let billingStatus: 'current' | 'overdue' | 'no_bills' = 'no_bills';
+          let daysOverdue = 0;
+          let latestBill = null;
+          
+          if (allBills.length > 0) {
+            allBills.sort((a: any, b: any) => new Date(b.billing_period_start).getTime() - new Date(a.billing_period_start).getTime());
+            latestBill = allBills[0];
+            
+            if (latestBill && (latestBill.status === 'active' || latestBill.status === 'partially_paid')) {
+              const dueDate = new Date(latestBill.due_date);
+              const today = new Date();
+              if (today > dueDate) {
+                billingStatus = 'overdue';
+                daysOverdue = Math.floor((today.getTime() - dueDate.getTime()) / (1000 * 60 * 60 * 24));
+              } else {
+                billingStatus = 'current';
+              }
+            } else if (latestBill && latestBill.status === 'fully_paid') {
+              billingStatus = 'current';
+            }
+          }
+          
+          // Calculate current billing cycle
+          const rentStartDate = new Date(tenant.rent_start_date);
+          const currentCycleNumber = fullyPaidBillsCount + 1;
+          const currentCycle = calculateBillingPeriod(rentStartDate, currentCycleNumber);
+          
+          const today = new Date();
+          const daysUntilCycleEnd = Math.ceil((currentCycle.end.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+          const canGenerateBill = daysUntilCycleEnd <= 3;
+
+          return {
+            ...tenant,
+            latest_bill: latestBill,
+            days_overdue: daysOverdue,
+            billing_status: billingStatus,
+            current_cycle_start: currentCycle.start.toISOString().split('T')[0],
+            current_cycle_end: currentCycle.end.toISOString().split('T')[0],
+            days_until_cycle_end: daysUntilCycleEnd,
+            can_generate_bill: canGenerateBill,
+          } as TenantWithBilling;
+        } catch (error) {
+          console.error(`Error processing tenant ${tenant.id}:`, error);
+          return {
+            ...tenant,
+            billing_status: 'no_bills' as const,
+            can_generate_bill: false,
+          } as TenantWithBilling;
+        }
+      });
+      
+      const batchResults = await Promise.all(batchPromises);
+      results.push(...batchResults);
+    }
+    
+    return results;
+  }, []);
+
+  // Optimized fetch functions with better error handling and caching
+  const fetchTenantsWithBilling = useCallback(async () => {
+    try {
+      setIsLoadingTenants(true);
+      const response = await fetch('/api/tenants?active=true');
+      const result = await response.json();
+      
+      if (result.success) {
+        const tenantsData = result.data || [];
+        const tenantsWithBilling = await processTenantsWithBilling(tenantsData);
+        setTenants(tenantsWithBilling);
+      } else {
+        addToast({
+          type: 'error',
+          title: 'Error',
+          message: result.error || 'Failed to fetch tenants'
+        });
+      }
+    } catch (error) {
+      console.error('Error fetching tenants:', error);
+      addToast({
+        type: 'error',
+        title: 'Error',
+        message: 'Failed to fetch tenants'
+      });
+    } finally {
+      setIsLoadingTenants(false);
+    }
+  }, [processTenantsWithBilling]);
+
   const { addToast } = useToast();
-  const [activeTab, setActiveTab] = useState('room-status');
   
-  // Room Status data
+  // Main data states
   const [tenants, setTenants] = useState<TenantWithBilling[]>([]);
-  
-  // Active Bills data
   const [bills, setBills] = useState<BillWithTenant[]>([]);
+  const [branches, setBranches] = useState<Branch[]>([]);
+  const [activeTab, setActiveTab] = useState('room-status');
   
   // Loading states
   const [isLoadingTenants, setIsLoadingTenants] = useState(true);
@@ -106,10 +365,9 @@ export default function BillingPage() {
   
   // Search and filters
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'current' | 'overdue' | 'no_bills'>('all');
-  const [branchFilter, setBranchFilter] = useState<string>('all');
-  const [billStatusFilter, setBillStatusFilter] = useState<'all' | 'active' | 'partially_paid' | 'overdue'>('all');
-  const [branches, setBranches] = useState<{ id: string; name: string }[]>([]);
+  const [statusFilter, setStatusFilter] = useState('');
+  const [branchFilter, setBranchFilter] = useState('');
+  const [billStatusFilter, setBillStatusFilter] = useState('');
   
   // Dialogs and forms
   const [isGenerateDialogOpen, setIsGenerateDialogOpen] = useState(false);
@@ -208,6 +466,11 @@ export default function BillingPage() {
             message: 'The refund has been marked as completed and removed from active bills.'
           });
         }
+        
+        // Immediately remove the refunded bill from local state
+        setBills(prevBills => prevBills.filter(bill => bill.id !== refundBill.id));
+        
+        // Refresh the bills list
         fetchActiveBills();
       } else {
         addToast({
@@ -235,6 +498,15 @@ export default function BillingPage() {
     fetchActiveBills();
     fetchBranches();
   }, []);
+
+  // Refetch bills when filters change
+  useEffect(() => {
+    if (activeTab === 'active-bills') {
+      fetchActiveBills();
+    } else if (activeTab === 'room-status') {
+      fetchTenantsWithBilling();
+    }
+  }, [searchTerm, billStatusFilter, branchFilter, statusFilter, activeTab]);
 
   const fetchBranches = async () => {
     try {
@@ -266,7 +538,8 @@ export default function BillingPage() {
       const result = await response.json();
       
       if (result.success) {
-        console.log('Fetched bills:', result.data); // Debug log
+        console.log('Fetched bills from API:', result.data?.length || 0, 'bills'); // Debug log
+        console.log('Bills data:', result.data); // Debug log
         setBills(result.data || []);
       } else {
         addToast({
@@ -284,146 +557,6 @@ export default function BillingPage() {
       });
     } finally {
       setIsLoadingBills(false);
-    }
-  };
-
-  const fetchTenantsWithBilling = async () => {
-    try {
-      const response = await fetch('/api/tenants?active=true');
-      const result = await response.json();
-      
-      if (result.success) {
-        const tenantsData = result.data || [];
-        
-        // For each tenant, get their latest bill and calculate billing status
-        const tenantsWithBilling = await Promise.all(
-          tenantsData.map(async (tenant: Tenant) => {
-            try {
-              // Fetch all bills for this tenant to count fully paid bills
-              const allBillsResponse = await fetch(`/api/bills?tenant_id=${tenant.id}`);
-              const allBillsResult = await allBillsResponse.json();
-              
-              let billingStatus: 'current' | 'overdue' | 'no_bills' = 'no_bills';
-              let daysOverdue = 0;
-              let latestBill = null;
-              let currentCycleStart = null;
-              let currentCycleEnd = null;
-              let daysUntilCycleEnd = 0;
-              let canGenerateBill = false;
-              const today = new Date();
-
-              // Get all bills and find latest one
-              const allBills = allBillsResult.success && allBillsResult.data ? allBillsResult.data : [];
-              if (allBills.length > 0) {
-                // Sort bills by billing period start to get the latest one
-                allBills.sort((a: any, b: any) => new Date(b.billing_period_start).getTime() - new Date(a.billing_period_start).getTime());
-                latestBill = allBills[0];
-              }
-
-              // Calculate current billing cycle based on rent_start_date and paid bills count
-              const rentStartDate = new Date(tenant.rent_start_date);
-              const fullyPaidBillsCount = allBills.filter((b: any) => b.status === 'fully_paid').length;
-              
-              // For historical data, use the fully paid bills count to determine the next cycle to bill
-              // This ensures we continue from where we left off in the billing history
-              const currentCycleNumber = fullyPaidBillsCount + 1; // Next cycle to bill
-              
-              console.log(`[Billing Debug] Tenant: ${tenant.full_name}, Rent start: ${rentStartDate.toISOString()}`);
-              console.log(`[Billing Debug] Fully paid bills count: ${fullyPaidBillsCount}`);
-              console.log(`[Billing Debug] Next cycle to bill: ${currentCycleNumber}`);
-              
-              // Calculate the billing period
-              const currentCycle = calculateBillingPeriod(rentStartDate, currentCycleNumber);
-              console.log(`[Billing Debug] Current cycle: ${currentCycle.start.toISOString()} to ${currentCycle.end.toISOString()}`);
-              
-              // DIRECT FIX: If this is the tenant with the specific issue (added on January 7)
-              // and we're calculating cycle 2 (February), manually fix the start date
-              const rentStartDay = rentStartDate.getDate();
-              if (currentCycleNumber === 2 && rentStartDay === 7) {
-                console.log(`[Billing Debug] Applying direct fix for tenant added on day 7, cycle 2`);
-                // Force the start date to be the 7th of the month
-                const fixedStart = new Date(currentCycle.start);
-                fixedStart.setDate(7);
-                currentCycle.start = fixedStart;
-                console.log(`[Billing Debug] Fixed cycle: ${currentCycle.start.toISOString()} to ${currentCycle.end.toISOString()}`);
-              }
-              
-              // Make sure we're using the fixed dates
-              currentCycleStart = currentCycle.start;
-              currentCycleEnd = currentCycle.end;
-              
-              // Additional debug to verify the dates being used
-              console.log(`[Billing Debug] Final dates used: Start=${currentCycleStart.toISOString()}, End=${currentCycleEnd.toISOString()}`);
-              
-              // Calculate days until cycle end
-              daysUntilCycleEnd = Math.ceil((currentCycleEnd.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-              
-              // Can generate bill when 3 or fewer days remain in cycle OR when cycle has already ended (overdue)
-              canGenerateBill = daysUntilCycleEnd <= 3;
-
-              // If we have an active/partial bill, check if it's overdue
-              if (latestBill && (latestBill.status === 'active' || latestBill.status === 'partially_paid')) {
-                const dueDate = new Date(latestBill.due_date);
-                if (today > dueDate) {
-                  billingStatus = 'overdue';
-                  daysOverdue = Math.floor((today.getTime() - dueDate.getTime()) / (1000 * 60 * 60 * 24));
-                } else {
-                  billingStatus = 'current';
-                }
-              } else if (latestBill && latestBill.status === 'fully_paid') {
-                billingStatus = 'current';
-              }
-
-              return {
-                ...tenant,
-                latest_bill: latestBill,
-                days_overdue: daysOverdue,
-                billing_status: billingStatus,
-                current_cycle_start: (() => {
-                  // DIRECT FIX: For tenants added on the 7th of the month, ensure cycle 2 starts on the 7th
-                  if (currentCycleNumber === 2 && rentStartDate.getDate() === 7) {
-                    // Get the year and month from the calculated start date
-                    const year = currentCycleStart.getFullYear();
-                    const month = currentCycleStart.getMonth();
-                    // Create a new date with the 7th day
-                    const fixedDate = new Date(year, month, 7);
-                    console.log(`[Billing Debug] Direct UI fix applied: ${fixedDate.toISOString()}`);
-                    return fixedDate.toISOString().split('T')[0];
-                  }
-                  return currentCycleStart?.toISOString().split('T')[0];
-                })(),
-                current_cycle_end: currentCycleEnd?.toISOString().split('T')[0],
-                days_until_cycle_end: daysUntilCycleEnd,
-                can_generate_bill: canGenerateBill,
-              } as TenantWithBilling;
-            } catch (error) {
-              console.error(`Error processing tenant ${tenant.id}:`, error);
-              return {
-                ...tenant,
-                billing_status: 'no_bills' as const,
-                can_generate_bill: false,
-              } as TenantWithBilling;
-            }
-          })
-        );
-
-        setTenants(tenantsWithBilling);
-      } else {
-        addToast({
-          type: 'error',
-          title: 'Error',
-          message: result.error || 'Failed to fetch tenants'
-        });
-      }
-    } catch (error) {
-      console.error('Error fetching tenants:', error);
-      addToast({
-        type: 'error',
-        title: 'Error',
-        message: 'Failed to fetch tenants'
-      });
-    } finally {
-      setIsLoadingTenants(false);
     }
   };
 
@@ -463,7 +596,6 @@ export default function BillingPage() {
           title: 'Invalid Input',
           message: 'Please check the highlighted fields and try again.'
         });
-        setIsSubmitting(false);
         return;
       }
 
@@ -476,7 +608,6 @@ export default function BillingPage() {
             title: 'Invalid Reading',
             message: `The new reading (${formData.present_electricity_reading} kWh) must be higher than the previous reading (${previousReading} kWh)`
           });
-          setIsSubmitting(false);
           return;
         }
       }
@@ -498,8 +629,20 @@ export default function BillingPage() {
           message: 'The new bill has been created and an email has been sent to the tenant.'
         });
 
-        // Log the event
+        // Close modal and reset form immediately after successful bill generation
+        setIsGenerateDialogOpen(false);
+        setFormData({
+          tenant_id: '',
+          present_electricity_reading: '',
+          present_reading_date: new Date().toISOString().split('T')[0],
+          extra_fee: null,
+          extra_fee_description: null
+        });
+        setSelectedTenant(null);
+
+        // Handle post-generation operations in a separate try-catch to avoid affecting the main flow
         try {
+          // Log the event
           const { data: { user } } = await supabase.auth.getUser();
           if (user && result.data) {
             await logAuditEvent(
@@ -518,34 +661,34 @@ export default function BillingPage() {
           }
         } catch (auditError) {
           console.error('Audit logging failed:', auditError);
-          // Don't block the UI for audit errors
+          // Continue with other operations
         }
 
-        // Reset form and close modal
-        setFormData({
-          tenant_id: '',
-          present_electricity_reading: '',
-          present_reading_date: new Date().toISOString().split('T')[0],
-          extra_fee: null,
-          extra_fee_description: null
-        });
-        setSelectedTenant(null);
-        setIsGenerateDialogOpen(false);
-
-        // Invalidate cache and refresh data
-        invalidateCache('bills');
-        invalidateCache('tenants');
-        
-        await Promise.all([
-          fetchActiveBills(),
-          fetchTenantsWithBilling()
-        ]);
+        try {
+          // Invalidate cache and refresh data
+          invalidateCache('bills');
+          invalidateCache('tenants');
+          
+          await Promise.all([
+            fetchActiveBills(),
+            fetchTenantsWithBilling()
+          ]);
+        } catch (refreshError) {
+          console.error('Data refresh error:', refreshError);
+          // As a fallback, just show a message asking user to refresh
+          addToast({
+            type: 'info',
+            title: 'Bill Generated',
+            message: 'Bill was created successfully. Please refresh the page to see the updated data.'
+          });
+        }
       } else {
         addToast({
           type: 'error',
           title: 'Error',
           message: result.error || 'Failed to generate bill'
         });
+        setIsGenerateDialogOpen(false); // Close dialog on error
       }
     } catch (error) {
       console.error('Error generating bill:', error);
@@ -554,6 +697,7 @@ export default function BillingPage() {
         title: 'Unable to Process',
         message: 'There was a problem processing your request. Please try again.'
       });
+      setIsGenerateDialogOpen(false); // Close dialog on error
     } finally {
       setIsSubmitting(false);
     }
@@ -561,6 +705,7 @@ export default function BillingPage() {
 
   const handlePaymentDialog = (bill: BillWithTenant) => {
     setSelectedBill(bill);
+    setIsSubmitting(false); // Ensure submitting state is reset
     const outstandingBalance = bill.total_amount_due - bill.amount_paid;
     
     setPaymentForm({
@@ -590,7 +735,6 @@ export default function BillingPage() {
           title: 'Invalid Payment',
           message: 'Please enter a payment amount greater than zero.'
         });
-        setIsSubmitting(false);
         return;
       }
       
@@ -617,7 +761,6 @@ export default function BillingPage() {
           title: 'Invalid Input',
           message: validationError
         });
-        setIsSubmitting(false);
         return;
       }
       
@@ -634,6 +777,8 @@ export default function BillingPage() {
           reference_number: paymentForm.reference_number,
           notes: paymentForm.notes
         }),
+        // Add timeout to prevent hanging
+        signal: AbortSignal.timeout(30000) // 30 second timeout
       });
       
       const result = await response.json();
@@ -645,49 +790,104 @@ export default function BillingPage() {
           message: 'The payment has been successfully recorded.'
         });
         
-        // Log the event
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user && result.data) {
-          await logAuditEvent(
-            supabase,
-            user.id,
-            'PAYMENT_CREATED',
-            'payments',
-            result.data.id,
-            null,
-            {
-              bill_id: result.data.bill_id,
-              amount: result.data.amount,
-              payment_date: result.data.payment_date,
-            }
-          );
-        }
-        
+        // Close dialog immediately after successful payment
         setIsPaymentDialogOpen(false);
         
-        // Invalidate cache and refresh both bills and tenants data
-        invalidateCache('bills');
-        invalidateCache('tenants');
-        invalidateCache('payments');
+        // Reset form
+        setPaymentForm({
+          amount_paid: '',
+          payment_date: new Date().toISOString().split('T')[0],
+          payment_method: 'cash',
+          reference_number: '',
+          notes: ''
+        });
         
-        await Promise.all([
-          fetchActiveBills(),
-          fetchTenantsWithBilling()
-        ]);
+        // Handle post-payment operations in a separate try-catch to avoid affecting the main flow
+        try {
+          // Log the event
+          const { data: { user } } = await supabase.auth.getUser();
+          if (user && result.data) {
+            await logAuditEvent(
+              supabase,
+              user.id,
+              'PAYMENT_CREATED',
+              'payments',
+              result.data.id,
+              null,
+              {
+                bill_id: result.data.bill_id,
+                amount: result.data.amount,
+                payment_date: result.data.payment_date,
+              }
+            );
+          }
+        } catch (auditError) {
+          console.error('Audit logging error:', auditError);
+          // Continue with other operations
+        }
+        
+        try {
+          // Invalidate cache and refresh both bills and tenants data
+          invalidateCache('bills');
+          invalidateCache('tenants');
+          invalidateCache('payments');
+          
+          // Immediately remove the bill from local state if it's fully paid
+          const outstandingBalance = selectedBill.total_amount_due - selectedBill.amount_paid;
+          const paymentAmount = parseFloat(paymentForm.amount_paid);
+          
+          if (paymentAmount >= outstandingBalance) {
+            // Bill is now fully paid, remove it from the bills list
+            console.log(`Bill ${selectedBill.id} is now fully paid, removing from local state`);
+            setBills(prevBills => {
+              const filteredBills = prevBills.filter(bill => bill.id !== selectedBill.id);
+              console.log(`Removed bill from local state. Bills count: ${prevBills.length} -> ${filteredBills.length}`);
+              return filteredBills;
+            });
+            // Clear selected bill since it's now fully paid
+            setSelectedBill(null);
+          } else {
+            // Bill is partially paid, update the amount_paid in local state
+            console.log(`Bill ${selectedBill.id} is partially paid, updating local state`);
+            setBills(prevBills => prevBills.map(bill => 
+              bill.id === selectedBill.id 
+                ? { ...bill, amount_paid: bill.amount_paid + paymentAmount, status: 'partially_paid' }
+                : bill
+            ));
+          }
+          
+          // Add a small delay to ensure database transaction is committed
+          await new Promise(resolve => setTimeout(resolve, 500));
+          
+          await Promise.all([
+            fetchActiveBills(),
+            fetchTenantsWithBilling()
+          ]);
+        } catch (refreshError) {
+          console.error('Data refresh error:', refreshError);
+          // As a fallback, just show a message asking user to refresh
+          addToast({
+            type: 'info',
+            title: 'Payment Recorded',
+            message: 'Payment was successful. Please refresh the page to see the updated data.'
+          });
+        }
       } else {
         addToast({
           type: 'error',
           title: 'Error',
           message: result.error || 'Failed to record payment'
         });
+        setIsPaymentDialogOpen(false); // Close dialog on error
       }
     } catch (error) {
-      console.error('Payment submission error:', error);
+      console.error('Error recording payment:', error);
       addToast({
         type: 'error',
-        title: 'Unable to Process',
-        message: 'There was a problem processing your request. Please try again.'
+        title: 'Error',
+        message: 'An unexpected error occurred while recording the payment.'
       });
+      setIsPaymentDialogOpen(false); // Close dialog on error
     } finally {
       setIsSubmitting(false);
     }
@@ -742,24 +942,6 @@ export default function BillingPage() {
     }
   };
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'current': return 'text-green-600 bg-green-50 border-green-200';
-      case 'overdue': return 'text-red-600 bg-red-50 border-red-200';
-      case 'no_bills': return 'text-orange-600 bg-orange-50 border-orange-200';
-      default: return 'text-gray-600 bg-gray-50 border-gray-200';
-    }
-  };
-
-  const getBillStatusColor = (status: string) => {
-    switch (status) {
-      case 'active': return 'text-blue-600 bg-blue-50 border-blue-200';
-      case 'partially_paid': return 'text-yellow-600 bg-yellow-50 border-yellow-200';
-      case 'overdue': return 'text-red-600 bg-red-50 border-red-200';
-      default: return 'text-gray-600 bg-gray-50 border-gray-200';
-    }
-  };
-
   const getStatusText = (tenant: TenantWithBilling) => {
     switch (tenant.billing_status) {
       case 'current': 
@@ -792,13 +974,13 @@ export default function BillingPage() {
 
   const getActionButtonColor = (tenant: TenantWithBilling) => {
     if (!tenant.can_generate_bill) {
-      return 'bg-gray-400 hover:bg-gray-500 text-white cursor-not-allowed';
+      return 'btn-ghost opacity-50 cursor-not-allowed';
     } else if (tenant.billing_status === 'overdue') {
-      return 'bg-red-600 hover:bg-red-700 text-white';
+      return 'btn-destructive';
     } else if (tenant.billing_status === 'no_bills') {
-      return 'bg-orange-600 hover:bg-orange-700 text-white';
+      return 'btn-warning';
     } else {
-      return 'bg-blue-600 hover:bg-blue-700 text-white';
+      return 'btn-primary';
     }
   };
 
@@ -971,7 +1153,6 @@ export default function BillingPage() {
           message: validationError,
           duration: 5000
         });
-        setIsSubmitting(false);
         return;
       }
       
@@ -993,39 +1174,54 @@ export default function BillingPage() {
           duration: 5000
         });
         
-        // Close dialog and refresh bills
+        // Close dialog immediately after successful update
         setIsEditBillDialogOpen(false);
         
-        // Invalidate cache and refresh data
-        invalidateCache('bills');
-        invalidateCache('tenants');
+        // Handle post-update operations in a separate try-catch to avoid affecting the main flow
+        try {
+          // Invalidate cache and refresh data
+          invalidateCache('bills');
+          invalidateCache('tenants');
+          
+          await Promise.all([
+            fetchActiveBills(),
+            fetchTenantsWithBilling()
+          ]);
+        } catch (refreshError) {
+          console.error('Data refresh error:', refreshError);
+          addToast({
+            type: 'info',
+            title: 'Bill Updated',
+            message: 'Bill was updated successfully. Please refresh the page to see the updated data.'
+          });
+        }
         
-        await Promise.all([
-          fetchActiveBills(),
-          fetchTenantsWithBilling()
-        ]);
-        
-        // Log the event
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user) {
-          await logAuditEvent(
-            supabase,
-            user.id,
-            'BILL_EDITED',
-            'bills',
-            selectedBill.id,
-            {
-              present_electricity_reading: selectedBill.present_electricity_reading,
-              present_reading_date: selectedBill.present_reading_date,
-              water_amount: selectedBill.water_amount,
-              extra_fee: selectedBill.extra_fee,
-              extra_fee_description: selectedBill.extra_fee_description
-            },
-            {
-              ...editBillForm,
-              edit_reason: editBillForm.edit_reason
-            }
-          );
+        try {
+          // Log the event
+          const { data: { user } } = await supabase.auth.getUser();
+          if (user) {
+            await logAuditEvent(
+              supabase,
+              user.id,
+              'BILL_EDITED',
+              'bills',
+              selectedBill.id,
+              {
+                present_electricity_reading: selectedBill.present_electricity_reading,
+                present_reading_date: selectedBill.present_reading_date,
+                water_amount: selectedBill.water_amount,
+                extra_fee: selectedBill.extra_fee,
+                extra_fee_description: selectedBill.extra_fee_description
+              },
+              {
+                ...editBillForm,
+                edit_reason: editBillForm.edit_reason
+              }
+            );
+          }
+        } catch (auditError) {
+          console.error('Audit logging error:', auditError);
+          // Continue execution - don't fail the bill update if audit logging fails
         }
       } else {
         addToast({
@@ -1034,6 +1230,7 @@ export default function BillingPage() {
           message: result.error || 'Failed to update bill',
           duration: 5000
         });
+        setIsEditBillDialogOpen(false); // Close dialog on error
       }
     } catch (error) {
       console.error('Error updating bill:', error);
@@ -1043,6 +1240,7 @@ export default function BillingPage() {
         message: 'An unexpected error occurred. Please try again.',
         duration: 5000
       });
+      setIsEditBillDialogOpen(false); // Close dialog on error
     } finally {
       setIsSubmitting(false);
     }
@@ -1052,18 +1250,20 @@ export default function BillingPage() {
   const renderActiveBills = () => {
     if (isLoadingBills) {
       return (
-        <div className="flex items-center justify-center p-8">
-          <Loader2 className="h-8 w-8 animate-spin text-gray-500" />
+        <div className="flex items-center justify-center p-12">
+          <div className="loading-spinner h-8 w-8" />
         </div>
       );
     }
 
     if (!bills.length) {
       return (
-        <div className="flex flex-col items-center justify-center p-8 text-center">
-          <Receipt className="h-12 w-12 text-gray-400 mb-2" />
-          <p className="text-lg font-medium text-gray-900">No Active Bills</p>
-          <p className="text-sm text-gray-500">All bills have been paid in full.</p>
+        <div className="empty-state py-16">
+          <Receipt className="empty-state-icon" />
+          <h3 className="empty-state-title">No Active Bills</h3>
+          <p className="empty-state-description">
+            All bills have been paid in full. Great job managing your payments!
+          </p>
         </div>
       );
     }
@@ -1085,49 +1285,59 @@ export default function BillingPage() {
       });
 
       return (
-        <Card key={bill.id} className="mb-4">
+        <Card key={bill.id} className="card-elevated mb-6 hover:scale-[1.01] transition-all duration-200">
           <CardContent className="p-6">
-            <div className="flex justify-between items-start mb-4">
-              <div className="flex-1">
-                <div className="flex items-center gap-2 mb-2">
-                  <Building2 className="h-4 w-4 text-gray-500" />
-                  <span className="text-sm text-gray-600">{bill.tenant?.rooms?.branches?.name}</span>
+            <div className="flex justify-between items-start mb-6">
+              <div className="flex-1 space-y-3">
+                <div className="flex items-center gap-3">
+                  <div className="bg-primary/10 p-2 rounded-lg">
+                    <Building2 className="h-4 w-4 text-primary" />
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-lg text-foreground">{bill.tenant?.rooms?.branches?.name}</h3>
+                    <p className="text-sm text-muted-foreground">Room {bill.tenant?.rooms?.room_number}</p>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2 mb-2">
-                  <Home className="h-4 w-4 text-gray-500" />
-                  <span className="text-sm text-gray-600">Room {bill.tenant?.rooms?.room_number}</span>
+                
+                <div className="flex items-center gap-2 p-3 bg-muted/50 rounded-lg">
+                  <User className="h-4 w-4 text-muted-foreground" />
+                  <span className="font-medium">{bill.tenant?.full_name}</span>
                 </div>
-                <div className="flex items-center gap-2 mb-2">
-                  <User className="h-4 w-4 text-gray-500" />
-                  <span className="text-sm font-medium">{bill.tenant?.full_name}</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Clock className="h-4 w-4 text-gray-500" />
-                  <span className="text-sm text-gray-600">
+                
+                <div className="flex items-center gap-2 p-3 bg-muted/50 rounded-lg">
+                  <Clock className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-sm">
                     {formatDate(bill.billing_period_start)} - {formatDate(bill.billing_period_end)}
                   </span>
                 </div>
               </div>
+              
               <div className="text-right">
-                <div className="text-sm text-gray-600 mb-1">Due Date</div>
-                <div className={`text-sm font-medium ${bill.isOverdue ? 'text-red-600' : 'text-gray-900'}`}>
+                <div className="text-sm font-medium text-muted-foreground mb-1">Due Date</div>
+                <div className={`text-sm font-semibold ${
+                  bill.isOverdue ? 'text-destructive' : 'text-foreground'
+                }`}>
                   {formatDate(bill.due_date)}
-                  {bill.isOverdue && ` (${bill.daysOverdue} days overdue)`}
+                  {bill.isOverdue && (
+                    <div className="text-xs text-destructive mt-1">
+                      {bill.daysOverdue} days overdue
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4 mb-4">
-              <div>
-                <div className="text-sm text-gray-600 mb-1">{isRefund ? 'Refund Amount' : 'Total Amount'}</div>
-                <div className={`text-lg font-semibold ${isRefund ? 'text-green-700' : ''}`}>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+              <div className="metric-card">
+                <div className="metric-label mb-2">{isRefund ? 'Refund Amount' : 'Total Amount'}</div>
+                <div className={`metric-value text-2xl ${isRefund ? 'text-success' : 'text-foreground'}`}>
                   {isRefund ? (
                     <>
-                      <span className="flex items-center">
-                        <Banknote className="h-4 w-4 mr-2 text-green-600" />
-                        <span className="text-green-700">-₱{refundAmount.toLocaleString()}</span>
-                      </span>
-                      <div className="text-xs text-green-600 mt-1">
+                      <div className="flex items-center gap-2">
+                        <Banknote className="h-5 w-5 text-success" />
+                        <span>-₱{refundAmount.toLocaleString()}</span>
+                      </div>
+                      <div className="text-xs text-success mt-1 font-normal">
                         To be returned to tenant
                       </div>
                     </>
@@ -1136,20 +1346,25 @@ export default function BillingPage() {
                   )}
                 </div>
                 {bill.penalty_amount > 0 && (
-                  <div className="flex items-center gap-1 text-red-600 mt-1">
-                    <AlertTriangle className="h-4 w-4" />
-                    <span className="text-sm font-medium">Penalty: {formatCurrency(bill.penalty_amount)}</span>
+                  <div className="flex items-center gap-2 mt-2 p-2 bg-destructive/10 rounded-lg">
+                    <AlertTriangle className="h-4 w-4 text-destructive" />
+                    <span className="text-sm font-medium text-destructive">
+                      Penalty: {formatCurrency(bill.penalty_amount)}
+                    </span>
                   </div>
                 )}
               </div>
+              
               {/* Only show the right column for non-refund bills */}
               {!isRefund && (
-                <div className="text-right">
-                  <div className="text-sm text-gray-600 mb-1">Amount Paid</div>
-                  <div className="text-lg font-semibold text-green-600">{formatCurrency(bill.amount_paid)}</div>
+                <div className="metric-card">
+                  <div className="metric-label mb-2">Amount Paid</div>
+                  <div className="metric-value text-2xl text-success">
+                    {formatCurrency(bill.amount_paid)}
+                  </div>
                   {/* For final bills, show outstanding amount after deposits */}
                   {bill.is_final_bill && (
-                    <div className="text-xs text-gray-600 mt-1">
+                    <div className="text-xs text-muted-foreground mt-1">
                       Outstanding: {formatCurrency(bill.total_amount_due - (bill.advance_payment_applied || 0) - bill.amount_paid)}
                     </div>
                   )}
@@ -1157,56 +1372,73 @@ export default function BillingPage() {
               )}
             </div>
 
-            <div className="flex justify-between items-center">
-              <div className="flex items-center gap-2">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+              <div className="flex items-center gap-3">
                 {isRefund ? (
-                  <div className="px-2 py-1 rounded text-sm bg-green-50 text-green-700 border border-green-200 font-semibold flex items-center">
+                  <div className="status-badge status-badge-success">
                     <CheckCircle className="h-4 w-4 mr-1" />
                     Refund Due
                   </div>
                 ) : (
-                  <div className={`px-2 py-1 rounded text-sm ${getBillStatusColor(bill.status)}`}>{getBillStatusText(bill)}</div>
+                  <div className={`status-badge ${
+                    bill.status === 'partially_paid' ? 'status-badge-warning' : 
+                    bill.status === 'fully_paid' ? 'status-badge-success' : 'status-badge-info'
+                  }`}>
+                    {getBillStatusText(bill)}
+                  </div>
                 )}
                 {bill.shouldShowPenaltyWarning && !isRefund && (
-                  <div className="flex items-center gap-1 text-amber-600">
-                    <AlertTriangle className="h-4 w-4" />
-                    <span className="text-sm">Penalty may apply</span>
+                  <div className="status-badge status-badge-warning">
+                    <AlertTriangle className="h-4 w-4 mr-1" />
+                    Penalty may apply
                   </div>
                 )}
               </div>
-              <div className="flex gap-2">
-                {/* Edit Bill button is now always shown (not just for regular bills) */}
+              
+              <div className="flex flex-wrap gap-2">
+                {/* Edit Bill button */}
                 <Button 
                   variant="outline" 
                   onClick={() => handleEditBillDialog(bill)}
                   disabled={bill.status === 'fully_paid'}
+                  className="btn-sm"
                 >
                   <Pencil className="h-4 w-4 mr-2" />
                   Edit Bill
                 </Button>
+                
                 {/* Only show Record Payment for non-refund bills */}
                 {!isRefund && (
-                  <Button onClick={() => handlePaymentDialog(bill)} className="flex items-center gap-2">
+                  <Button 
+                    onClick={() => handlePaymentDialog(bill)} 
+                    className="btn-primary btn-sm"
+                  >
                     <CreditCard className="h-4 w-4 mr-2" />
                     Record Payment
                   </Button>
                 )}
+                
                 {/* Show Complete Refund for refund bills */}
                 {isRefund && bill.total_amount_due !== 0 && (
                   <Button
                     onClick={() => { setRefundBill(bill); setIsRefundDialogOpen(true); }}
-                    className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white"
+                    className="btn-success btn-sm"
                     disabled={isSubmitting}
                   >
                     <CheckCircle className="h-4 w-4 mr-2" />
                     {isSubmitting && refundBill?.id === bill.id ? 'Completing...' : 'Complete Refund'}
                   </Button>
                 )}
-                {isRefund && (
-                  <div className="text-xs text-green-700 font-semibold">Company owes tenant this refund</div>
-                )}
               </div>
             </div>
+            
+            {isRefund && (
+              <div className="mt-4 p-3 bg-success/10 rounded-lg">
+                <p className="text-sm font-medium text-success">
+                  Company owes tenant this refund amount
+                </p>
+              </div>
+            )}
           </CardContent>
         </Card>
       );
@@ -1215,64 +1447,71 @@ export default function BillingPage() {
 
   if (isLoadingTenants) {
     return (
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <h1 className="text-3xl font-bold tracking-tight">Room Billing Status</h1>
+      <div className="space-y-6 px-4 sm:px-6 lg:px-8">
+        <div className="page-header -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8 py-6 mb-8">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="loading-skeleton h-8 w-64 mb-2"></div>
+              <div className="loading-skeleton h-4 w-96"></div>
+            </div>
+          </div>
         </div>
-        <div className="flex items-center justify-center py-12">
-          <Loader2 className="h-8 w-8 animate-spin" />
+        <div className="flex items-center justify-center py-16">
+          <div className="loading-spinner h-12 w-12" />
         </div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-4 sm:space-y-6 px-3 sm:px-0">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Billing Management</h1>
-          <p className="text-muted-foreground text-sm sm:text-base">
-            Manage room billing status and process tenant payments
-          </p>
-        </div>
-      </div>
-
-      {/* Tabs */}
+    <div className="space-y-6 px-4 sm:px-6 lg:px-8">
+      {/* Enhanced Tabs Section */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid w-full grid-cols-2">
-          <TabsTrigger value="room-status" className="text-xs sm:text-sm">Room Billing Status</TabsTrigger>
-          <TabsTrigger value="active-bills" className="text-xs sm:text-sm">Active Bills</TabsTrigger>
+        <TabsList className="grid w-full grid-cols-2 rounded-xl bg-muted p-1">
+          <TabsTrigger 
+            value="room-status" 
+            className="rounded-lg data-[state=active]:bg-card data-[state=active]:shadow-sm font-medium"
+          >
+            <Home className="h-4 w-4 mr-2" />
+            Room Status
+          </TabsTrigger>
+          <TabsTrigger 
+            value="active-bills"
+            className="rounded-lg data-[state=active]:bg-card data-[state=active]:shadow-sm font-medium"
+          >
+            <Receipt className="h-4 w-4 mr-2" />
+            Active Bills
+          </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="room-status" className="space-y-4 sm:space-y-6">
-          {/* Room Status Section */}
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <TabsContent value="room-status" className="space-y-6 mt-8">
+          {/* Enhanced Room Status Section */}
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
             <div>
-              <h2 className="text-xl sm:text-2xl font-bold tracking-tight">Room Billing Status</h2>
-              <p className="text-muted-foreground text-sm sm:text-base">
-                Overview of tenant billing status and bill generation
+              <h2 className="section-title">Room Billing Status</h2>
+              <p className="text-muted-foreground">
+                Overview of tenant billing cycles and bill generation timing
               </p>
             </div>
           </div>
 
-          {/* Filters for Room Status */}
-          <div className="flex flex-col sm:flex-row gap-4">
+          {/* Enhanced Filters */}
+          <div className="flex flex-col sm:flex-row gap-4 mb-8">
             <div className="flex-1">
               <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
                 <Input
                   placeholder="Search tenants, rooms, or branches..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10"
+                  className="pl-10 input-lg"
                 />
               </div>
             </div>
             
             <Select value={branchFilter} onValueChange={setBranchFilter}>
-              <SelectTrigger className="w-[180px]">
-                <Building2 className="h-4 w-4 mr-2" />
+              <SelectTrigger className="w-[200px] h-12">
+                <Building2 className="h-4 w-4 mr-2 text-muted-foreground" />
                 <SelectValue placeholder="Filter by branch" />
               </SelectTrigger>
               <SelectContent>
@@ -1286,59 +1525,74 @@ export default function BillingPage() {
             </Select>
           </div>
 
-          {/* Tenant Cards Grid */}
+          {/* Enhanced Tenant Cards Grid */}
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
             {filteredTenants.map((tenant) => (
-              <Card key={tenant.id} className="hover:shadow-lg transition-shadow">
-                <CardHeader className="pb-3">
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center space-x-2">
-                      <Home className="h-5 w-5 text-blue-600" />
-                      <CardTitle className="text-lg">Room {tenant.rooms?.room_number}</CardTitle>
+              <Card key={tenant.id} className="card-elevated group hover:scale-[1.02] transition-all duration-200">
+                <CardHeader className="pb-4">
+                  <div className="flex items-start justify-between mb-3">
+                    <div className="flex items-center space-x-3">
+                      <div className="bg-primary/10 p-2 rounded-lg">
+                        <Home className="h-5 w-5 text-primary" />
+                      </div>
+                      <div>
+                        <CardTitle className="text-lg font-semibold">Room {tenant.rooms?.room_number}</CardTitle>
+                        <CardDescription className="text-sm">{tenant.rooms?.branches?.name}</CardDescription>
+                      </div>
                     </div>
-                    {/* Days due badge */}
+                    {/* Enhanced status badge */}
                     {typeof tenant.days_until_cycle_end === 'number' && (
-                      <span className="ml-2 text-xs bg-orange-100 text-orange-800 px-2 py-1 rounded-full font-medium">
+                      <div className={`status-badge ${
+                        tenant.days_until_cycle_end <= 0 
+                          ? 'status-badge-error' 
+                          : tenant.days_until_cycle_end <= 3 
+                            ? 'status-badge-warning' 
+                            : 'status-badge-info'
+                      }`}>
+                        <Clock className="h-3 w-3 mr-1" />
                         {tenant.days_until_cycle_end > 0
-                          ? `${tenant.days_until_cycle_end} day${tenant.days_until_cycle_end !== 1 ? 's' : ''} left`
-                          : `${Math.abs(tenant.days_until_cycle_end)} day${Math.abs(tenant.days_until_cycle_end) !== 1 ? 's' : ''} overdue`}
-                      </span>
+                          ? `${tenant.days_until_cycle_end}d left`
+                          : `${Math.abs(tenant.days_until_cycle_end)}d over`}
+                      </div>
                     )}
                   </div>
                 </CardHeader>
                 
                 <CardContent className="space-y-4">
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-gray-600">Tenant:</span>
-                      <span className="font-medium">{tenant.full_name}</span>
-                    </div>
-                    
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-gray-600">Branch:</span>
-                      <span className="text-sm font-medium text-blue-600">
-                        {tenant.rooms?.branches?.name}
-                      </span>
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+                      <div className="flex items-center gap-2">
+                        <User className="h-4 w-4 text-muted-foreground" />
+                        <span className="text-sm font-medium text-muted-foreground">Tenant</span>
+                      </div>
+                      <span className="font-semibold text-foreground">{tenant.full_name}</span>
                     </div>
 
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-gray-600">Current Cycle:</span>
-                      <span className="text-sm">
+                    <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+                      <div className="flex items-center gap-2">
+                        <Calendar className="h-4 w-4 text-muted-foreground" />
+                        <span className="text-sm font-medium text-muted-foreground">Current Cycle</span>
+                      </div>
+                      <span className="text-sm font-medium">
                         {tenant.current_cycle_start ? `${formatDate(tenant.current_cycle_start)} - ${formatDate(tenant.current_cycle_end)}` : 'N/A'}
                       </span>
                     </div>
 
-                    {/* Bill Generation Due Date */}
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-gray-600">Bill Generation Due:</span>
-                      <span className={`text-sm ${(tenant.days_until_cycle_end ?? Infinity) <= 3 ? 'text-orange-600 font-medium' : ''}`}>
+                    <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+                      <div className="flex items-center gap-2">
+                        <Zap className="h-4 w-4 text-muted-foreground" />
+                        <span className="text-sm font-medium text-muted-foreground">Bill Due</span>
+                      </div>
+                      <span className={`text-sm font-semibold ${
+                        (tenant.days_until_cycle_end ?? Infinity) <= 3 ? 'text-warning' : 'text-foreground'
+                      }`}>
                         {tenant.current_cycle_end ? formatDate(tenant.current_cycle_end) : 'N/A'}
                       </span>
                     </div>
                   </div>
 
                   <Button 
-                    className={`w-full ${getActionButtonColor(tenant)}`}
+                    className={`w-full btn-lg font-semibold ${getActionButtonColor(tenant)} group-hover:shadow-lg transition-all duration-200`}
                     onClick={() => handleGenerateBill(tenant)}
                   >
                     <Zap className="h-4 w-4 mr-2" />
@@ -1350,35 +1604,35 @@ export default function BillingPage() {
           </div>
 
           {filteredTenants.length === 0 && (
-            <div className="text-center py-12">
-              <Receipt className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-gray-900 mb-2">No tenants found</h3>
-              <p className="text-gray-500">
-                {searchTerm ? 'Try adjusting your search criteria.' : 'No active tenants available.'}
+            <div className="empty-state py-16">
+              <Receipt className="empty-state-icon" />
+              <h3 className="empty-state-title">No tenants found</h3>
+              <p className="empty-state-description">
+                {searchTerm ? 'Try adjusting your search criteria or filter settings.' : 'No active tenants are currently available for billing.'}
               </p>
             </div>
           )}
         </TabsContent>
 
-        <TabsContent value="active-bills" className="space-y-6">
-          {/* Active Bills Section */}
-          <div className="flex items-center justify-between">
+        <TabsContent value="active-bills" className="space-y-6 mt-8">
+          {/* Enhanced Active Bills Section */}
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
             <div>
-              <h2 className="text-2xl font-bold tracking-tight">Active Bills</h2>
+              <h2 className="section-title">Active Bills</h2>
               <p className="text-muted-foreground">
-                Overview of active bills and payment history
+                Manage payments and track outstanding balances
               </p>
             </div>
             
             <Button 
               onClick={handleApplyPenalties}
               disabled={isApplyingPenalties}
-              className="bg-red-600 hover:bg-red-700"
+              className="btn-destructive btn-lg font-semibold"
             >
               {isApplyingPenalties ? (
                 <>
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Applying...
+                  Applying Penalties...
                 </>
               ) : (
                 <>
@@ -1389,23 +1643,23 @@ export default function BillingPage() {
             </Button>
           </div>
 
-          {/* Filters for Active Bills */}
-          <div className="flex flex-col sm:flex-row gap-4">
+          {/* Enhanced Filters for Active Bills */}
+          <div className="flex flex-col sm:flex-row gap-4 mb-8">
             <div className="flex-1">
               <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
                 <Input
-                  placeholder="Search bills by tenant or room..."
+                  placeholder="Search bills by tenant, room, or amount..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10"
+                  className="pl-10 input-lg"
                 />
               </div>
             </div>
             
             <Select value={billStatusFilter} onValueChange={(value: any) => setBillStatusFilter(value)}>
-              <SelectTrigger className="w-[180px]">
-                <Filter className="h-4 w-4 mr-2" />
+              <SelectTrigger className="w-[200px] h-12">
+                <Filter className="h-4 w-4 mr-2 text-muted-foreground" />
                 <SelectValue placeholder="Filter by bill status" />
               </SelectTrigger>
               <SelectContent>
@@ -1415,70 +1669,112 @@ export default function BillingPage() {
                 <SelectItem value="overdue">Overdue</SelectItem>
               </SelectContent>
             </Select>
+            
+            <Select value={branchFilter} onValueChange={setBranchFilter}>
+              <SelectTrigger className="w-[200px] h-12">
+                <Building2 className="h-4 w-4 mr-2 text-muted-foreground" />
+                <SelectValue placeholder="Filter by branch" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Branches</SelectItem>
+                {branches.map((branch) => (
+                  <SelectItem key={branch.id} value={branch.id}>
+                    {branch.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
-          {/* Active Bills Table */}
-          <div className="mt-4">
+          {/* Enhanced Active Bills List */}
+          <div className="space-y-4">
             {renderActiveBills()}
           </div>
         </TabsContent>
       </Tabs>
 
-      {/* Payment Dialog */}
-      <Dialog open={isPaymentDialogOpen} onOpenChange={setIsPaymentDialogOpen}>
-        <DialogContent className="sm:max-w-[500px] max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Record Payment</DialogTitle>
-            <DialogDescription>
-              For Bill #{selectedBill?.id?.slice(0, 8)}
+      {/* Enhanced Payment Dialog */}
+      <Dialog open={isPaymentDialogOpen} onOpenChange={(open) => {
+        setIsPaymentDialogOpen(open);
+        if (!open) {
+          // Reset form and submitting state when dialog is closed
+          setIsSubmitting(false);
+          setPaymentForm({
+            amount_paid: '',
+            payment_date: new Date().toISOString().split('T')[0],
+            payment_method: 'cash',
+            reference_number: '',
+            notes: ''
+          });
+        }
+      }}>
+        <DialogContent className="dialog-content sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
+          <DialogHeader className="dialog-header">
+            <DialogTitle className="dialog-title flex items-center gap-2">
+              <CreditCard className="h-5 w-5 text-primary" />
+              Record Payment
+            </DialogTitle>
+            <DialogDescription className="dialog-description">
+              Processing payment for Bill #{selectedBill?.id?.slice(0, 8)}
             </DialogDescription>
           </DialogHeader>
 
-          <div className="mb-6 bg-gray-50 p-4 rounded-lg">
-            <div className="flex items-center gap-2 mb-2">
-              <Building2 className="h-4 w-4 text-gray-500" />
-              <span className="text-sm text-gray-600">{selectedBill?.tenant?.rooms?.branches?.name}</span>
-            </div>
-            <div className="flex items-center gap-2 mb-2">
-              <Home className="h-4 w-4 text-gray-500" />
-              <span className="text-sm text-gray-600">Room {selectedBill?.tenant?.rooms?.room_number}</span>
-            </div>
-            <div className="flex items-center gap-2 mb-2">
-              <User className="h-4 w-4 text-gray-500" />
-              <span className="text-sm font-medium">{selectedBill?.tenant?.full_name}</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <Clock className="h-4 w-4 text-gray-500" />
-              <span className="text-sm text-gray-600">
-                {formatDate(selectedBill?.billing_period_start)} - {formatDate(selectedBill?.billing_period_end)}
-              </span>
+          {/* Enhanced Bill Info Section */}
+          <div className="metric-card mb-6">
+            <div className="space-y-3">
+              <div className="flex items-center gap-3">
+                <div className="bg-primary/10 p-2 rounded-lg">
+                  <Building2 className="h-4 w-4 text-primary" />
+                </div>
+                <div>
+                  <h4 className="font-semibold">{selectedBill?.tenant?.rooms?.branches?.name}</h4>
+                  <p className="text-sm text-muted-foreground">Room {selectedBill?.tenant?.rooms?.room_number}</p>
+                </div>
+              </div>
+              
+              <div className="flex items-center gap-3">
+                <div className="bg-muted/50 p-2 rounded-lg">
+                  <User className="h-4 w-4 text-muted-foreground" />
+                </div>
+                <span className="font-medium">{selectedBill?.tenant?.full_name}</span>
+              </div>
+              
+              <div className="flex items-center gap-3">
+                <div className="bg-muted/50 p-2 rounded-lg">
+                  <Clock className="h-4 w-4 text-muted-foreground" />
+                </div>
+                <span className="text-sm">
+                  {formatDate(selectedBill?.billing_period_start)} - {formatDate(selectedBill?.billing_period_end)}
+                </span>
+              </div>
             </div>
           </div>
 
-          <div className="bg-white p-4 rounded-lg border mb-6">
-            <h4 className="text-sm font-medium text-gray-700 mb-3">Bill Summary</h4>
-            <div className="space-y-2">
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-600">Total Bill Amount:</span>
-                <span className="font-medium">{formatCurrency(selectedBill?.total_amount_due || 0)}</span>
+          {/* Enhanced Bill Summary */}
+          <div className="card-elevated p-6 mb-6">
+            <h4 className="section-title mb-4">Bill Summary</h4>
+            <div className="space-y-4">
+              <div className="flex justify-between items-center p-3 bg-muted/50 rounded-lg">
+                <span className="text-sm font-medium text-muted-foreground">Total Bill Amount</span>
+                <span className="font-semibold text-lg">{formatCurrency(selectedBill?.total_amount_due || 0)}</span>
               </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-600">Already Paid:</span>
-                <span className="font-medium text-green-600">{formatCurrency(selectedBill?.amount_paid || 0)}</span>
+              <div className="flex justify-between items-center p-3 bg-success/10 rounded-lg">
+                <span className="text-sm font-medium text-success">Already Paid</span>
+                <span className="font-semibold text-lg text-success">{formatCurrency(selectedBill?.amount_paid || 0)}</span>
               </div>
-              <div className="flex justify-between text-sm pt-2 border-t">
-                <span className="font-medium">Outstanding Balance:</span>
-                <span className="font-bold text-blue-600">
+              <div className="flex justify-between items-center p-4 bg-primary/10 rounded-lg border-2 border-primary/20">
+                <span className="font-semibold text-primary">Outstanding Balance</span>
+                <span className="font-bold text-xl text-primary">
                   {formatCurrency((selectedBill?.total_amount_due || 0) - (selectedBill?.amount_paid || 0))}
                 </span>
               </div>
             </div>
           </div>
 
-          <form onSubmit={handleSubmitPayment} className="space-y-4">
-            <div className="space-y-4">
+          <form onSubmit={handleSubmitPayment} className="space-y-6">
+            <div className="space-y-5">
               <div>
-                <Label htmlFor="amount_paid">Payment Amount (₱) *</Label>
+                <Label htmlFor="amount_paid" className="text-sm font-semibold">Payment Amount (₱) *</Label>
                 <Input
                   id="amount_paid"
                   type="number"
@@ -1495,77 +1791,91 @@ export default function BillingPage() {
                   min="0"
                   max={(selectedBill?.total_amount_due || 0) - (selectedBill?.amount_paid || 0)}
                   step="1"
-                  placeholder="0"
+                  placeholder="Enter payment amount"
                   required
+                  disabled={isSubmitting}
+                  className="input-lg"
                 />
               </div>
 
               <div>
-                <Label htmlFor="payment_date">Payment Date *</Label>
+                <Label htmlFor="payment_date" className="text-sm font-semibold">Payment Date *</Label>
                 <Input
                   id="payment_date"
                   type="date"
                   value={paymentForm.payment_date}
                   onChange={(e) => setPaymentForm({ ...paymentForm, payment_date: e.target.value })}
                   required
+                  disabled={isSubmitting}
+                  className="input-lg"
                 />
               </div>
 
               <div>
-                <Label htmlFor="payment_method">Payment Method *</Label>
+                <Label htmlFor="payment_method" className="text-sm font-semibold">Payment Method *</Label>
                 <Select
                   value={paymentForm.payment_method}
                   onValueChange={(value: 'cash' | 'gcash') => setPaymentForm({ ...paymentForm, payment_method: value })}
+                  disabled={isSubmitting}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger className="h-12">
                     <SelectValue placeholder="Select payment method" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="cash">Cash</SelectItem>
-                    <SelectItem value="gcash">GCash</SelectItem>
+                    <SelectItem value="cash">💵 Cash Payment</SelectItem>
+                    <SelectItem value="gcash">📱 GCash Payment</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
 
               {paymentForm.payment_method === 'gcash' && (
                 <div>
-                  <Label htmlFor="reference_number">
-                    Reference Number <span className="text-red-500">*</span>
+                  <Label htmlFor="reference_number" className="text-sm font-semibold">
+                    Reference Number <span className="text-destructive">*</span>
                   </Label>
                   <Input
                     id="reference_number"
-                    placeholder="GCash reference number (required)"
+                    placeholder="Enter GCash reference number"
                     value={paymentForm.reference_number}
                     onChange={(e) => setPaymentForm({ ...paymentForm, reference_number: e.target.value })}
                     required
-                    className={!paymentForm.reference_number ? 'border-red-500' : ''}
+                    disabled={isSubmitting}
+                    className={`input-lg ${!paymentForm.reference_number ? 'border-destructive' : ''}`}
                   />
-                  <p className="text-sm text-gray-600 mt-1">
-                    GCash reference number is required for GCash payments
+                  <p className="text-sm text-muted-foreground mt-2">
+                    GCash reference number is required for digital payments
                   </p>
                 </div>
               )}
 
               <div>
-                <Label htmlFor="notes">Notes (Optional)</Label>
+                <Label htmlFor="notes" className="text-sm font-semibold">Additional Notes (Optional)</Label>
                 <Input
                   id="notes"
-                  placeholder="e.g., Additional details"
+                  placeholder="Add any additional payment details..."
                   value={paymentForm.notes}
                   onChange={(e) => setPaymentForm({ ...paymentForm, notes: e.target.value })}
+                  disabled={isSubmitting}
+                  className="input-lg"
                 />
               </div>
             </div>
 
             {paymentForm.amount_paid && Number(paymentForm.amount_paid) >= ((selectedBill?.total_amount_due || 0) - (selectedBill?.amount_paid || 0)) && (
-              <div className="flex items-center gap-2 p-3 bg-green-50 text-green-700 rounded-lg">
+              <div className="flex items-center gap-3 p-4 bg-success/10 text-success rounded-lg border border-success/20">
                 <CheckCircle className="h-5 w-5" />
-                <span className="text-sm">This payment will mark the bill as fully paid.</span>
+                <span className="font-medium">This payment will mark the bill as fully paid.</span>
               </div>
             )}
 
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setIsPaymentDialogOpen(false)}>
+            <DialogFooter className="gap-3 pt-6">
+              <Button 
+                type="button" 
+                variant="outline" 
+                onClick={() => setIsPaymentDialogOpen(false)} 
+                disabled={isSubmitting}
+                className="btn-md"
+              >
                 Cancel
               </Button>
               <Button type="submit" disabled={isSubmitting}>
@@ -1587,7 +1897,21 @@ export default function BillingPage() {
       </Dialog>
 
       {/* Generate Bill Dialog */}
-      <Dialog open={isGenerateDialogOpen} onOpenChange={setIsGenerateDialogOpen}>
+      <Dialog open={isGenerateDialogOpen} onOpenChange={(open) => {
+        setIsGenerateDialogOpen(open);
+        if (!open) {
+          // Reset form and submitting state when dialog is closed
+          setIsSubmitting(false);
+          setFormData({
+            tenant_id: '',
+            present_electricity_reading: '',
+            present_reading_date: new Date().toISOString().split('T')[0],
+            extra_fee: null,
+            extra_fee_description: null
+          });
+          setSelectedTenant(null);
+        }
+      }}>
         <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
           <form onSubmit={handleSubmitBill}>
             <DialogHeader>
@@ -1884,7 +2208,14 @@ export default function BillingPage() {
       </Dialog>
 
       {/* Edit Bill Dialog */}
-      <Dialog open={isEditBillDialogOpen} onOpenChange={setIsEditBillDialogOpen}>
+      <Dialog open={isEditBillDialogOpen} onOpenChange={(open) => {
+        setIsEditBillDialogOpen(open);
+        if (!open) {
+          // Reset submitting state when dialog is closed
+          setIsSubmitting(false);
+          // Note: We don't reset editBillForm here as it might be needed for validation display
+        }
+      }}>
         <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
           <form onSubmit={handleSubmitEditBill}>
             <DialogHeader>
@@ -2198,16 +2529,15 @@ export default function BillingPage() {
                           <span>Less: Advance Payment:</span>
                           <span>-₱{advancePayment.toLocaleString()}</span>
                         </div>
-                        {fullyPaidBillCount >= 5 && (
+                        {fullyPaidBillCount >= 5 ? (
                           <div className="flex justify-between text-green-600">
                             <span>Less: Security Deposit:</span>
                             <span>-₱{securityDeposit.toLocaleString()}</span>
                           </div>
-                        )}
-                        {depositApp.forfeitedAmount > 0 && (
+                        ) : (
                           <div className="flex justify-between text-red-600">
                             <span>Security Deposit (Forfeited):</span>
-                            <span>₱{depositApp.forfeitedAmount.toLocaleString()}</span>
+                            <span>₱{securityDeposit.toLocaleString()}</span>
                           </div>
                         )}
                         <div className="border-t pt-2 flex justify-between font-bold">

@@ -46,6 +46,7 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { logAuditEvent } from '@/lib/audit/logger';
+import { usePageTitleEffect } from '@/lib/hooks/usePageTitleEffect';
 // import { motion, AnimatePresence } from 'framer-motion';
 
 // Schemas
@@ -571,6 +572,9 @@ const EditBranchDialog = ({ branch, branches, onUpdate }: { branch: Branch; bran
 
 // Main Component
 export default function BranchManager() {
+  // Set page title and subtitle
+  usePageTitleEffect('Branches & Rooms', 'Manage branch locations and room assignments');
+  
   const [branches, setBranches] = useState<Branch[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
@@ -757,7 +761,9 @@ export default function BranchManager() {
   return (
     <div className="space-y-4 sm:space-y-6 px-3 sm:px-0">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Branches & Rooms</h1>
+        <div className="flex-1">
+          {/* Title now shown in header */}
+        </div>
         <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
           <DialogTrigger asChild>
             <Button className="flex items-center gap-2 w-full sm:w-auto">
