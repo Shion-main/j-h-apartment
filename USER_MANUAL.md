@@ -179,9 +179,12 @@ Fill in the tenant's details:
 - **Phone Number**: Primary contact number
 
 #### Step 3: Room Assignment
-- **Select Branch**: Choose the property location
+- **Select Branch**: Choose the property location first
+- **Wait for Rooms to Load**: After selecting a branch, wait for available rooms to load
 - **Select Room**: Pick an available room from the dropdown
 - The system only shows vacant rooms
+- A loading indicator will appear while fetching rooms
+- If no rooms appear, the branch may not have any available rooms
 
 #### Step 4: Contract Terms
 - **Rent Start Date**: When the tenant will begin paying rent
@@ -821,6 +824,17 @@ The J&H Management System is fully optimized for mobile devices, allowing you to
 2. Ensure you're not accidentally tapping nearby elements
 3. Try refreshing the page
 
+#### Navigation Buttons Not Clickable
+**Symptoms**: Menu buttons or navigation links don't respond to clicks/taps
+**Solutions**:
+1. **Wait for Page Load**: Ensure the page has fully loaded before clicking
+2. **Avoid Double-Clicking**: Click once and wait for response
+3. **Check for Overlays**: Close any open dialogs or forms that might be blocking clicks
+4. **Refresh Page**: Press F5 or pull down to refresh on mobile
+5. **Clear Browser Cache**: Clear stored data and try again
+6. **Try Different Area**: Click/tap on the text part of the button rather than icons
+7. **Check Internet**: Ensure stable internet connection
+
 #### Form Inputs Not Working
 1. Tap directly in the input field
 2. Ensure keyboard appears
@@ -896,9 +910,21 @@ This section helps you resolve common issues you might encounter while using the
 **Symptoms**: No options appear in dropdown menus
 **Solutions**:
 1. **Check Dependencies**: Some dropdowns depend on previous selections (e.g., rooms depend on branch selection)
-2. **Refresh Page**: Reload the page to reset the form
-3. **Clear Filters**: Remove any active filters that might hide options
-4. **Verify Data Exists**: Ensure there are actually items to display (e.g., vacant rooms for tenant assignment)
+2. **Wait for Loading**: Look for loading indicators and wait for data to load
+3. **Refresh Page**: Reload the page to reset the form
+4. **Clear Filters**: Remove any active filters that might hide options
+5. **Verify Data Exists**: Ensure there are actually items to display (e.g., vacant rooms for tenant assignment)
+6. **Check Network**: Verify internet connection if dropdown should load from server
+
+#### Room Dropdown Not Loading When Adding Tenant
+**Symptoms**: After selecting a branch, no rooms appear in the room dropdown
+**Solutions**:
+1. **Wait for Loading**: Look for "Loading rooms..." text in the dropdown
+2. **Verify Branch Selection**: Ensure you've selected a branch first
+3. **Check Available Rooms**: The message below the dropdown shows how many rooms are available
+4. **Refresh and Retry**: Close the dialog and try adding a tenant again
+5. **Check Branch Has Rooms**: Some branches may not have any available rooms
+6. **Contact Administrator**: If rooms should be available but don't appear
 
 ### Payment and Billing Issues
 

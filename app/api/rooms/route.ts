@@ -33,7 +33,11 @@ export async function GET(request: NextRequest) {
         .eq('is_active', true);
 
       const occupiedRoomIds = activeTenants?.map(t => t.room_id) || [];
-      query = query.not('id', 'in', `(${occupiedRoomIds.join(',')})`);
+      
+      // Only filter if there are actually occupied rooms
+      if (occupiedRoomIds.length > 0) {
+        query = query.not('id', 'in', `(${occupiedRoomIds.join(',')})`);
+      }
     }
 
     // Filter by branch if specified

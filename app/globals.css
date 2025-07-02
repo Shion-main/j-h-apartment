@@ -56,4 +56,35 @@
   body {
     @apply bg-background text-foreground;
   }
-} 
+}
+
+@layer components {
+  /* Navigation button enhancements */
+  .nav-button {
+    position: relative;
+    z-index: 1;
+    pointer-events: auto;
+    touch-action: manipulation;
+  }
+
+  .nav-button:hover {
+    z-index: 2;
+  }
+
+  /* Mobile overlay fixes */
+  .mobile-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    pointer-events: auto;
+  }
+
+  .mobile-sidebar {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 10000;
+    pointer-events: auto;
+  }
+}

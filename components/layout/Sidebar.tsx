@@ -90,7 +90,7 @@ export default function Sidebar() {
   }
 
   return (
-    <div className="hidden lg:flex flex-col w-72 bg-white shadow-lg fixed h-full z-40">
+    <div className="hidden lg:flex flex-col w-72 bg-white shadow-lg fixed h-full z-40 pointer-events-auto">
       <div className="flex flex-col h-full">
         {/* Header - Fixed */}
         <div className="flex items-center justify-center p-6 border-b bg-white">
@@ -115,14 +115,14 @@ export default function Sidebar() {
                 key={item.name}
                 href={item.href}
                 className={
-                  `flex items-center space-x-2 px-2 py-2 rounded-lg text-xs font-medium transition-all duration-200 group ` +
+                  `flex items-center space-x-2 px-2 py-2 rounded-lg text-xs font-medium transition-all duration-200 group cursor-pointer select-none ` +
                   (isActive
                     ? 'bg-blue-600 text-white shadow-lg'
                     : 'text-gray-700 hover:bg-gray-100 hover:text-gray-900')
                 }
               >
                 <Icon className={`h-5 w-5 flex-shrink-0 ${isActive ? 'text-white' : 'text-gray-500 group-hover:text-blue-600'}`} />
-                <div className="flex-1 min-w-0">
+                <div className="flex-1 min-w-0 pointer-events-none">
                   <div className="font-semibold text-xs">{item.name}</div>
                   <div className={`text-[11px] ${isActive ? 'text-blue-100' : 'text-gray-500'}`}>{item.description}</div>
                 </div>

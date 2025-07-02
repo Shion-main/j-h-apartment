@@ -119,6 +119,7 @@ export default function TenantsPage() {
 
   // Add local state for Add Tenant modal branch selection
   const [addTenantBranchId, setAddTenantBranchId] = useState<string | null>(null);
+  const [isLoadingRooms, setIsLoadingRooms] = useState(false);
 
   useEffect(() => {
     fetchTenants();
@@ -132,6 +133,18 @@ export default function TenantsPage() {
       setFormData(prev => ({ ...prev, room_id: '' })); // Reset room selection when branch changes
     }
   }, [selectedBranchId]);
+
+  // Fetch rooms when add tenant branch is selected
+  useEffect(() => {
+    if (addTenantBranchId) {
+      setIsLoadingRooms(true);
+      fetchAvailableRooms(addTenantBranchId).finally(() => {
+        setIsLoadingRooms(false);
+      });
+      // Reset room selection when branch changes
+      setFormData(prev => ({ ...prev, room_id: '' }));
+    }
+  }, [addTenantBranchId]);
 
   const fetchBranches = async () => {
     try {
@@ -197,13 +210,32 @@ export default function TenantsPage() {
       }
 
       const response = await fetch(url.toString());
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
       const result = await response.json();
       
       if (result.success) {
         setAvailableRooms(result.data || []);
+      } else {
+        console.error('API returned error:', result.error);
+        addToast({
+          type: 'error',
+          title: 'Error',
+          message: 'Failed to fetch available rooms',
+          duration: 5000
+        });
       }
     } catch (error) {
       console.error('Error fetching available rooms:', error);
+      addToast({
+        type: 'error',
+        title: 'Network Error',
+        message: 'Unable to load available rooms. Please try again.',
+        duration: 5000
+      });
     }
   };
 
@@ -257,6 +289,7 @@ export default function TenantsPage() {
           advance_payment_received: false,
           security_deposit_received: false
         });
+        setAddTenantBranchId(null); // Reset branch selection
         setIsAddDialogOpen(false);
         
         // Show success toast
@@ -680,27 +713,47 @@ export default function TenantsPage() {
                     <Select
                       value={formData.room_id || "placeholder"}
                       onValueChange={(value) => setFormData({...formData, room_id: value === "placeholder" ? "" : value})}
-                      disabled={!addTenantBranchId}
+                      disabled={!addTenantBranchId || isLoadingRooms}
                     >
                       <SelectTrigger>
-                        <SelectValue placeholder={addTenantBranchId ? "Select a room" : "Select a branch first"} />
+                        <SelectValue placeholder={
+                          !addTenantBranchId 
+                            ? "Select a branch first" 
+                            : isLoadingRooms 
+                              ? "Loading rooms..." 
+                              : "Select a room"
+                        } />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="placeholder">Select a room</SelectItem>
-                        {availableRooms.filter(room => !addTenantBranchId || room.branch?.id === addTenantBranchId).map((room) => (
-                          <SelectItem key={room.id} value={room.id}>
-                            {room.room_number} - ₱{room.monthly_rent.toLocaleString()}
-                          </SelectItem>
-                        ))}
+                        <SelectItem value="placeholder">
+                          {isLoadingRooms ? "Loading..." : "Select a room"}
+                        </SelectItem>
+                        {!isLoadingRooms && availableRooms
+                          .filter(room => addTenantBranchId && room.branch?.id === addTenantBranchId)
+                          .map((room) => (
+                            <SelectItem key={room.id} value={room.id}>
+                              {room.room_number} - ₱{room.monthly_rent.toLocaleString()}
+                            </SelectItem>
+                          ))
+                        }
                       </SelectContent>
                     </Select>
-                    {addTenantBranchId && availableRooms.filter(room => !addTenantBranchId || room.branch?.id === addTenantBranchId).length === 0 && (
-                      <p className="text-sm text-muted-foreground mt-2">No available rooms in this branch</p>
+                    {addTenantBranchId && !isLoadingRooms && (
+                      <div className="mt-2 text-sm text-muted-foreground">
+                        {availableRooms.filter(room => room.branch?.id === addTenantBranchId).length === 0 ? (
+                          <span className="text-orange-600">No available rooms in this branch</span>
+                        ) : (
+                          <span>
+                            {availableRooms.filter(room => room.branch?.id === addTenantBranchId).length} available room(s) in selected branch
+                          </span>
+                        )}
+                      </div>
                     )}
-                    {formData.room_id && (
-                      <p className="text-sm text-muted-foreground mt-2">
-                        {availableRooms.filter(room => !addTenantBranchId || room.branch?.id === addTenantBranchId).length} available room(s) in selected branch
-                      </p>
+                    {isLoadingRooms && (
+                      <div className="mt-2 text-sm text-muted-foreground flex items-center">
+                        <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                        Loading available rooms...
+                      </div>
                     )}
                   </div>
                 </div>
@@ -809,7 +862,20 @@ export default function TenantsPage() {
               </div>
 
               <DialogFooter>
-                <Button variant="outline" onClick={() => { setIsAddDialogOpen(false); setAddTenantBranchId(null); }}>
+                <Button variant="outline" onClick={() => { 
+                  setIsAddDialogOpen(false); 
+                  setAddTenantBranchId(null);
+                  setFormData({
+                    full_name: '',
+                    phone_number: '',
+                    email_address: '',
+                    room_id: '',
+                    rent_start_date: '',
+                    initial_electricity_reading: 0,
+                    advance_payment_received: false,
+                    security_deposit_received: false
+                  });
+                }}>
                   Cancel
                 </Button>
                 <Button type="submit" disabled={isSubmitting}>
@@ -1453,4 +1519,4 @@ export default function TenantsPage() {
       )}
     </div>
   );
-} 
+}

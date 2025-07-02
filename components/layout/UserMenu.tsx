@@ -199,8 +199,14 @@ export default function UserMenu({ currentPath }: UserMenuProps) {
 
       {/* Mobile Sidebar */}
       {sidebarOpen && (
-        <div className="lg:hidden fixed inset-0 bg-black bg-opacity-50 z-50" onClick={() => setSidebarOpen(false)}>
-          <div className="fixed inset-y-0 left-0 w-72 bg-white shadow-xl p-4 z-60" onClick={(e) => e.stopPropagation()}>
+        <div 
+          className="lg:hidden fixed inset-0 bg-black bg-opacity-50 z-[9999] pointer-events-auto" 
+          onClick={() => setSidebarOpen(false)}
+        >
+          <div 
+            className="fixed inset-y-0 left-0 w-72 bg-white shadow-xl p-4 z-[10000] pointer-events-auto" 
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="flex items-center justify-between pb-4 border-b">
               <div className="flex items-center space-x-3">
                 <Building2 className="h-10 w-10 text-primary" />
@@ -209,7 +215,12 @@ export default function UserMenu({ currentPath }: UserMenuProps) {
                   <p className="text-sm text-gray-500">Property Management</p>
                 </div>
               </div>
-              <Button variant="ghost" size="icon" onClick={() => setSidebarOpen(false)}>
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                onClick={() => setSidebarOpen(false)}
+                className="hover:bg-gray-100 transition-colors"
+              >
                 <X className="h-6 w-6" />
               </Button>
             </div>
@@ -221,9 +232,13 @@ export default function UserMenu({ currentPath }: UserMenuProps) {
                   <Link
                     key={item.name}
                     href={item.href}
-                    onClick={() => setSidebarOpen(false)}
+                    onClick={(e) => {
+                      // Ensure click is processed
+                      e.stopPropagation();
+                      setSidebarOpen(false);
+                    }}
                     className={
-                      `flex items-center space-x-3 px-3 py-3 rounded-lg text-sm font-medium transition-all duration-200 group ` +
+                      `flex items-center space-x-3 px-3 py-3 rounded-lg text-sm font-medium transition-all duration-200 group cursor-pointer select-none ` +
                       (isActive
                         ? 'bg-primary text-primary-foreground shadow-md'
                         : 'text-gray-700 hover:bg-gray-100 hover:text-gray-900')
@@ -250,8 +265,11 @@ export default function UserMenu({ currentPath }: UserMenuProps) {
               </div>
               <Button
                 variant="outline"
-                className="w-full justify-center group"
-                onClick={handleSignOut}
+                className="w-full justify-center group hover:bg-gray-50 transition-colors"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleSignOut();
+                }}
                 disabled={isLoggingOut}
               >
                 {isLoggingOut ? (
@@ -267,4 +285,4 @@ export default function UserMenu({ currentPath }: UserMenuProps) {
       )}
     </>
   );
-} 
+}
