@@ -5,6 +5,7 @@ import { useRouter, usePathname } from 'next/navigation';
 import { getSupabaseClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
 import Sidebar from './Sidebar';
+import { usePageTitle } from '@/lib/contexts/PageTitleContext';
 import { 
   LogOut,
   Menu,
@@ -13,12 +14,14 @@ import {
   Loader2
 } from 'lucide-react';
 import type { User as SupabaseUser } from '@supabase/supabase-js';
+import { LoadingState } from '@/components/ui/loading-state';
 
 interface DashboardLayoutProps {
   children: React.ReactNode;
 }
 
 export default function DashboardLayout({ children }: DashboardLayoutProps) {
+  const { title, subtitle } = usePageTitle();
   const router = useRouter();
   const pathname = usePathname();
   const [userProfile, setUserProfile] = useState<any>(null);
@@ -60,18 +63,30 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     
     const checkSession = async () => {
       try {
-        const { data: { session } } = await supabase.auth.getSession();
+        // Get session and fetch profile in parallel
+        const [sessionResult] = await Promise.all([
+          supabase.auth.getSession(),
+          // Pre-warm the cache
+          supabase.auth.getUser().catch(() => null)
+        ]);
+
+        const { data: { session } } = sessionResult;
 
         if (!mounted) return;
 
         if (!session) {
           setIsAuthenticated(false);
+          setIsLoading(false);
           router.replace('/login');
           return;
         }
         
-        setIsAuthenticated(true);
-        const profile = await fetchUserProfile(session.user);
+        // Fetch profile and set states in parallel
+        const [profile] = await Promise.all([
+          fetchUserProfile(session.user),
+          setIsAuthenticated(true)
+        ]);
+
         if (mounted && profile) {
           setUserProfile(profile);
         }
@@ -88,6 +103,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
       }
     };
 
+    // Start auth check immediately
     checkSession();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
@@ -120,16 +136,14 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     }
   }, [supabase]);
 
+  // Show loading state only for initial load
   if (isLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <Loader2 className="h-16 w-16 animate-spin text-blue-600" />
-      </div>
-    );
+    return <LoadingState message="Initializing your dashboard..." />;
   }
 
+  // Don't show anything while redirecting to login
   if (!isAuthenticated || !userProfile) {
-    return null; 
+    return null;
   }
 
   const userRole = userProfile?.user_roles?.[0]?.roles?.role_name || 'Staff';
@@ -169,15 +183,24 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
       {/* Main content */}
       <div className="flex-1 lg:pl-72">
         {/* Top bar */}
-        <div className="bg-white shadow-sm border-b border-gray-200 px-4 py-3 flex items-center justify-between lg:justify-end">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="lg:hidden"
-            onClick={() => setSidebarOpen(true)}
-          >
-            <Menu className="h-5 w-5" />
-          </Button>
+        <div className="bg-white shadow-sm border-b border-gray-200 px-4 py-3 flex items-center justify-between">
+          <div className="flex items-center space-x-4">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="lg:hidden"
+              onClick={() => setSidebarOpen(true)}
+            >
+              <Menu className="h-5 w-5" />
+            </Button>
+            
+            <div>
+              <h1 className="text-xl font-semibold text-gray-900">{title}</h1>
+              {subtitle && (
+                <p className="text-sm text-gray-500">{subtitle}</p>
+              )}
+            </div>
+          </div>
           
           <div className="flex items-center space-x-4">
             <div className="text-right hidden sm:block">

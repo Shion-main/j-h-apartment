@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Eye, EyeOff, CheckCircle, Users, BarChart3, Star, AlertCircle, Loader2 } from 'lucide-react';
 import Image from 'next/image';
+import { usePageTitleEffect } from '@/lib/hooks/usePageTitleEffect';
 
 function WelcomeContent() {
   return (
@@ -75,6 +76,9 @@ function WelcomeContent() {
 }
 
 export default function LoginPage() {
+  // Set page title
+  usePageTitleEffect('Login', 'Sign in to J&H Management System');
+
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');

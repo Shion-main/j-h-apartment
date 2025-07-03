@@ -1,4 +1,7 @@
+'use client';
+
 import { useEffect } from 'react';
+import { usePageTitle } from '@/lib/contexts/PageTitleContext';
 
 /**
  * Sets the document title and optionally a subtitle for the page.
@@ -6,12 +9,9 @@ import { useEffect } from 'react';
  * @param {string} [subtitle] - Optional subtitle to append to the title.
  */
 export function usePageTitleEffect(title: string, subtitle?: string) {
+  const { setPageTitle } = usePageTitle();
+
   useEffect(() => {
-    if (subtitle) {
-      document.title = `${title} | ${subtitle} | J&H Management`;
-    } else {
-      document.title = `${title} | J&H Management`;
-    }
-    // Optionally, you could set a meta tag or global state for subtitle if needed
-  }, [title, subtitle]);
+    setPageTitle(title, subtitle);
+  }, [title, subtitle, setPageTitle]);
 }

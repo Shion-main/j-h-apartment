@@ -3,6 +3,7 @@ import { headers } from 'next/headers'
 import './globals.css'
 import DashboardLayout from '@/components/layout/DashboardLayout'
 import ToasterProvider from '@/components/layout/Toaster'
+import { PageTitleProvider } from '@/lib/contexts/PageTitleContext'
 import { Inter } from 'next/font/google'
 
 const inter = Inter({ subsets: ['latin'] })
@@ -52,9 +53,11 @@ export default function RootLayout({
           <link rel="apple-touch-icon" href="/lib/Logo/J-H LOGO-BLUE.png" />
         </head>
         <body className="font-sans bg-background text-foreground">
-          <ToasterProvider>
-            {children}
-          </ToasterProvider>
+          <PageTitleProvider>
+            <ToasterProvider>
+              {children}
+            </ToasterProvider>
+          </PageTitleProvider>
         </body>
       </html>
     )
@@ -69,11 +72,13 @@ export default function RootLayout({
         <link rel="apple-touch-icon" href="/lib/Logo/J-H LOGO-BLUE.png" />
       </head>
       <body className={inter.className}>
-        <ToasterProvider>
-          <DashboardLayout>
-            {children}
-          </DashboardLayout>
-        </ToasterProvider>
+        <PageTitleProvider>
+          <ToasterProvider>
+            <DashboardLayout>
+              {children}
+            </DashboardLayout>
+          </ToasterProvider>
+        </PageTitleProvider>
       </body>
     </html>
   )

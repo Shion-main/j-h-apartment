@@ -8,7 +8,6 @@ import {
   calculateBillingPeriod 
 } from '@/lib/calculations/billing';
 import { logTenantMoveOut } from '@/lib/audit/logger';
-import { logAuditEvent } from '@/lib/audit/logger';
 import { EmailService } from '@/lib/services/emailService';
 import { 
   allocatePaymentToComponents, 
@@ -570,17 +569,6 @@ export async function PATCH(
         completed_date: new Date().toISOString(),
         final_bill_status: finalBill.status,
       }
-    );
-
-    // After successfully processing the move-out, log the event
-    await logAuditEvent(
-      supabase,
-      user.id,
-      'TENANT_MOVE_OUT',
-      'tenants',
-      tenantId,
-      { status: 'active' }, // Old value
-      { status: 'inactive', move_out_date: new Date().toISOString() } // New value
     );
 
     // Send farewell email

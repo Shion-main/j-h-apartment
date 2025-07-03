@@ -1,3 +1,5 @@
+'use client';
+
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import type { Database } from '@/types/database';
 
@@ -9,6 +11,15 @@ export function getSupabaseClient() {
     supabaseInstance = createClientComponentClient<Database>();
   }
   return supabaseInstance;
+}
+
+// Helper function to ensure non-null client
+export function getSupabaseClientOrThrow() {
+  const client = getSupabaseClient();
+  if (!client) {
+    throw new Error('Supabase client not initialized');
+  }
+  return client;
 }
 
 // Export the singleton instance
@@ -207,4 +218,25 @@ export function invalidateCache(pattern?: string) {
   } else {
     queryCache.clear();
   }
-} 
+}
+
+// Initialize cache with common queries
+export async function prewarmCache() {
+  try {
+    // Preload common data
+    const session = await supabase.auth.getSession();
+    if (session.data.session) {
+      const userId = session.data.session.user.id;
+      await Promise.all([
+        getUserProfile(userId).catch(() => null),
+        getUserRole(userId).catch(() => null),
+        getBranches().catch(() => null)
+      ]);
+    }
+  } catch (error) {
+    console.error('Cache prewarm error:', error);
+  }
+}
+
+// Call prewarm immediately
+prewarmCache(); 

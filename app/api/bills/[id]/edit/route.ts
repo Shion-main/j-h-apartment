@@ -396,17 +396,6 @@ export async function PATCH(
     }
   );
 
-  // Log the audit event
-  await logAuditEvent(
-    supabase,
-    user.id,
-    currentBill.is_final_bill ? 'FINAL_BILL_REGENERATED' : 'BILL_UPDATED',
-    'bills',
-    billId,
-    currentBill,
-    updatedBill
-  );
-
   // Send appropriate email notification
   try {
     const { EmailService } = await import('@/lib/services/emailService');

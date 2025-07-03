@@ -585,7 +585,7 @@ const EditBranchDialog = ({ branch, branches, onUpdate }: { branch: Branch; bran
 // Main Component
 export default function BranchManager() {
   // Set page title and subtitle
-  usePageTitleEffect('Branches & Rooms', 'Manage branch locations and room assignments');
+  usePageTitleEffect('Branches', 'Manage your property branches and rooms');
   
   const [branches, setBranches] = useState<Branch[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -596,6 +596,9 @@ export default function BranchManager() {
 
   const { register: registerBranch, handleSubmit: handleSubmitBranch, formState: { errors: branchErrors, isSubmitting: isBranchSubmitting }, reset: resetBranch } = useForm<AddBranchFormData>({
     resolver: zodResolver(addBranchSchema),
+    defaultValues: {
+      numberOfRooms: 1
+    }
   });
   
   useEffect(() => {

@@ -166,9 +166,6 @@ export async function POST(request: NextRequest) {
       }
     );
 
-    // Log event
-    await logAuditEvent(supabase, user.id, 'EXPENSE_CREATED', 'company_expenses', expense.id, null, expense);
-
     return NextResponse.json({
       data: expense,
       success: true
@@ -271,9 +268,6 @@ export async function PUT(request: NextRequest) {
       }
     );
 
-    // Log event
-    await logAuditEvent(supabase, user.id, 'EXPENSE_UPDATED', 'company_expenses', updatedExpense.id, currentExpense, updatedExpense);
-
     return NextResponse.json({
       data: updatedExpense,
       success: true
@@ -350,9 +344,6 @@ export async function DELETE(request: NextRequest) {
         category: expense.category,
       }
     );
-
-    // Log event
-    await logAuditEvent(supabase, user.id, 'EXPENSE_DELETED', 'company_expenses', id, expense, null);
 
     return NextResponse.json({
       data: { message: 'Expense deleted successfully' },
