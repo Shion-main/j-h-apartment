@@ -54,9 +54,9 @@ export default function RootLayout({
         </head>
         <body className="font-sans bg-background text-foreground">
           <PageTitleProvider>
-            <ToasterProvider>
-              {children}
-            </ToasterProvider>
+          <ToasterProvider>
+            {children}
+          </ToasterProvider>
           </PageTitleProvider>
         </body>
       </html>
@@ -73,11 +73,11 @@ export default function RootLayout({
       </head>
       <body className={inter.className}>
         <PageTitleProvider>
-          <ToasterProvider>
-            <DashboardLayout>
-              {children}
-            </DashboardLayout>
-          </ToasterProvider>
+        <ToasterProvider>
+          <DashboardLayout>
+            {children}
+          </DashboardLayout>
+        </ToasterProvider>
         </PageTitleProvider>
       </body>
     </html>
