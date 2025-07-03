@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, useCallback, memo } from 'react';
+import { useState, useEffect, useMemo, useCallback, memo, useRef } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -38,6 +38,8 @@ import {
 import { logAuditEvent } from '@/lib/audit/logger';
 import { getSupabaseClient, invalidateCache } from '@/lib/supabase/client';
 import { calculateDepositApplication } from '@/lib/calculations/billing';
+import { usePerformanceMonitor } from '@/lib/utils/performance';
+import { BillingPageSkeleton, TenantCardSkeleton, BillCardSkeleton } from '@/components/ui/skeleton';
 
 interface TenantWithBilling extends Tenant {
   latest_bill?: Bill;
@@ -211,7 +213,11 @@ export default function BillingPage() {
   // Set page title and subtitle
   usePageTitleEffect('Billing', 'Generate bills and record payments');
 
-
+  // Toast hook
+  const { addToast } = useToast();
+  
+  // Performance monitoring
+  const { startTimer, endTimer, logMetrics } = usePerformanceMonitor();
 
   // Memoized Supabase client
   const supabase = useMemo(() => getSupabaseClient(), []);
@@ -244,94 +250,19 @@ export default function BillingPage() {
     }
   }, []);
 
-  // Optimized tenant processing with memoization
-  const processTenantsWithBilling = useCallback(async (tenantsData: Tenant[]): Promise<TenantWithBilling[]> => {
-    // Process tenants in batches to improve performance
-    const batchSize = 10;
-    const results: TenantWithBilling[] = [];
-    
-    for (let i = 0; i < tenantsData.length; i += batchSize) {
-      const batch = tenantsData.slice(i, i + batchSize);
-      
-      const batchPromises = batch.map(async (tenant: Tenant) => {
-        try {
-          // Fetch all bills for this tenant
-          const allBillsResponse = await fetch(`/api/bills?tenant_id=${tenant.id}`);
-          const allBillsResult = await allBillsResponse.json();
-          
-          const allBills = allBillsResult.success && allBillsResult.data ? allBillsResult.data : [];
-          const fullyPaidBillsCount = allBills.filter((b: any) => b.status === 'fully_paid').length;
-          
-          // Calculate billing status efficiently
-          let billingStatus: 'current' | 'overdue' | 'no_bills' = 'no_bills';
-          let daysOverdue = 0;
-          let latestBill = null;
-          
-          if (allBills.length > 0) {
-            allBills.sort((a: any, b: any) => new Date(b.billing_period_start).getTime() - new Date(a.billing_period_start).getTime());
-            latestBill = allBills[0];
-            
-            if (latestBill && (latestBill.status === 'active' || latestBill.status === 'partially_paid')) {
-              const dueDate = new Date(latestBill.due_date);
-              const today = new Date();
-              if (today > dueDate) {
-                billingStatus = 'overdue';
-                daysOverdue = Math.floor((today.getTime() - dueDate.getTime()) / (1000 * 60 * 60 * 24));
-              } else {
-                billingStatus = 'current';
-              }
-            } else if (latestBill && latestBill.status === 'fully_paid') {
-              billingStatus = 'current';
-            }
-          }
-          
-          // Calculate current billing cycle
-          const rentStartDate = new Date(tenant.rent_start_date);
-          const currentCycleNumber = fullyPaidBillsCount + 1;
-          const currentCycle = calculateBillingPeriod(rentStartDate, currentCycleNumber);
-          
-          const today = new Date();
-          const daysUntilCycleEnd = Math.ceil((currentCycle.end.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-          const canGenerateBill = daysUntilCycleEnd <= 3;
-
-          return {
-            ...tenant,
-            latest_bill: latestBill,
-            days_overdue: daysOverdue,
-            billing_status: billingStatus,
-            current_cycle_start: currentCycle.start.toISOString().split('T')[0],
-            current_cycle_end: currentCycle.end.toISOString().split('T')[0],
-            days_until_cycle_end: daysUntilCycleEnd,
-            can_generate_bill: canGenerateBill,
-          } as TenantWithBilling;
-        } catch (error) {
-          console.error(`Error processing tenant ${tenant.id}:`, error);
-          return {
-            ...tenant,
-            billing_status: 'no_bills' as const,
-            can_generate_bill: false,
-          } as TenantWithBilling;
-        }
-      });
-      
-      const batchResults = await Promise.all(batchPromises);
-      results.push(...batchResults);
-    }
-    
-    return results;
-  }, []);
-
-  // Optimized fetch functions with better error handling and caching
+  // Optimized tenant processing - moved to server-side
   const fetchTenantsWithBilling = useCallback(async () => {
+    startTimer('fetchTenantsWithBilling');
     try {
       setIsLoadingTenants(true);
-      const response = await fetch('/api/tenants?active=true');
+      
+      // Use the optimized API endpoint that returns all tenant billing data in one call
+      const response = await fetch('/api/tenants/with-billing');
       const result = await response.json();
       
       if (result.success) {
         const tenantsData = result.data || [];
-        const tenantsWithBilling = await processTenantsWithBilling(tenantsData);
-        setTenants(tenantsWithBilling);
+        setTenants(tenantsData);
       } else {
         addToast({
           type: 'error',
@@ -348,10 +279,10 @@ export default function BillingPage() {
       });
     } finally {
       setIsLoadingTenants(false);
+      endTimer('fetchTenantsWithBilling');
     }
-  }, [processTenantsWithBilling]);
+  }, [startTimer, endTimer, addToast]);
 
-  const { addToast } = useToast();
   
   // Main data states
   const [tenants, setTenants] = useState<TenantWithBilling[]>([]);
@@ -363,11 +294,32 @@ export default function BillingPage() {
   const [isLoadingTenants, setIsLoadingTenants] = useState(true);
   const [isLoadingBills, setIsLoadingBills] = useState(true);
   
-  // Search and filters
+  // Search and filters with debouncing
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [branchFilter, setBranchFilter] = useState('all');
   const [billStatusFilter, setBillStatusFilter] = useState('');
+  
+  // Debounced search term
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
+  const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // Debounce search term changes
+  useEffect(() => {
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+    
+    searchTimeoutRef.current = setTimeout(() => {
+      setDebouncedSearchTerm(searchTerm);
+    }, 300); // 300ms debounce
+    
+    return () => {
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
+      }
+    };
+  }, [searchTerm]);
   
   // Dialogs and forms
   const [isGenerateDialogOpen, setIsGenerateDialogOpen] = useState(false);
@@ -493,20 +445,33 @@ export default function BillingPage() {
     }
   };
 
+  // Performance monitoring on mount
+  useEffect(() => {
+    startTimer('billingPageMount');
+    
+    return () => {
+      endTimer('billingPageMount');
+      // Log performance metrics in development
+      if (process.env.NODE_ENV === 'development') {
+        logMetrics();
+      }
+    };
+  }, [startTimer, endTimer, logMetrics]);
+
   useEffect(() => {
     fetchTenantsWithBilling();
     fetchActiveBills();
     fetchBranches();
   }, []);
 
-  // Refetch bills when filters change
+  // Optimized data fetching with debounced search
   useEffect(() => {
     if (activeTab === 'active-bills') {
       fetchActiveBills();
     } else if (activeTab === 'room-status') {
       fetchTenantsWithBilling();
     }
-  }, [searchTerm, billStatusFilter, branchFilter, statusFilter, activeTab]);
+  }, [debouncedSearchTerm, billStatusFilter, branchFilter, statusFilter, activeTab]);
 
   const fetchBranches = async () => {
     try {
@@ -521,16 +486,23 @@ export default function BillingPage() {
     }
   };
 
-  const fetchActiveBills = async () => {
+  const fetchActiveBills = useCallback(async () => {
+    startTimer('fetchActiveBills');
     try {
       setIsLoadingBills(true);
       const params = new URLSearchParams({
-        search: searchTerm,
+        search: debouncedSearchTerm,
         status: billStatusFilter,
         branch: branchFilter
       });
       
-      const response = await fetch(`/api/bills/active?${params}`);
+      const response = await fetch(`/api/bills/active?${params}`, {
+        // Add cache headers for better performance
+        headers: {
+          'Cache-Control': 'no-cache',
+        }
+      });
+      
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
@@ -538,8 +510,6 @@ export default function BillingPage() {
       const result = await response.json();
       
       if (result.success) {
-        console.log('Fetched bills from API:', result.data?.length || 0, 'bills'); // Debug log
-        console.log('Bills data:', result.data); // Debug log
         setBills(result.data || []);
       } else {
         addToast({
@@ -557,8 +527,9 @@ export default function BillingPage() {
       });
     } finally {
       setIsLoadingBills(false);
+      endTimer('fetchActiveBills');
     }
-  };
+  }, [debouncedSearchTerm, billStatusFilter, branchFilter, startTimer, endTimer, addToast]);
 
   const handleGenerateBill = async (tenant?: TenantWithBilling) => {
     if (tenant) {
@@ -674,36 +645,39 @@ export default function BillingPage() {
           invalidateCache('rooms');
           invalidateCache('available-rooms');
           
-          // Refresh data with cache busting
-          const timestamp = Date.now();
-          
-          // Set loading states for data refresh
+          // Optimized data refresh
           setIsLoadingBills(true);
           setIsLoadingTenants(true);
 
           try {
-            // First fetch active bills
-            const billsResponse = await fetch(`/api/bills/active?_cache_bust=${timestamp}`);
-            const billsResult = await billsResponse.json();
+            // Use Promise.all for parallel fetching
+            const [billsResponse, tenantsResponse] = await Promise.all([
+              fetch('/api/bills/active', {
+                headers: { 'Cache-Control': 'no-cache' }
+              }),
+              fetch('/api/tenants/with-billing', {
+                headers: { 'Cache-Control': 'no-cache' }
+              })
+            ]);
+
+            const [billsResult, tenantsResult] = await Promise.all([
+              billsResponse.json(),
+              tenantsResponse.json()
+            ]);
+
             if (billsResult.success) {
               setBills(billsResult.data || []);
             }
 
-            // Then fetch and process tenants
-            const tenantsResponse = await fetch(`/api/tenants?active=true&_cache_bust=${timestamp}`);
-            const tenantsResult = await tenantsResponse.json();
             if (tenantsResult.success) {
-              const tenantsWithBilling = await processTenantsWithBilling(tenantsResult.data || []);
-              setTenants(tenantsWithBilling);
+              setTenants(tenantsResult.data || []);
             }
           } finally {
-            // Always reset loading states
             setIsLoadingBills(false);
             setIsLoadingTenants(false);
           }
         } catch (error) {
           console.error('Post-generation operations error:', error);
-          // Show a warning toast if data refresh fails
           addToast({
             type: 'warning',
             title: 'Data Refresh Warning',
@@ -764,31 +738,37 @@ export default function BillingPage() {
         return;
       }
       
-      if (paymentAmount > outstandingBalance) {
-        addToast({
-          type: 'warning',
-          title: 'Overpayment Warning',
-          message: `Payment of ₱${paymentAmount.toLocaleString()} exceeds the outstanding balance of ₱${outstandingBalance.toLocaleString()}. The bill will be marked as fully paid.`
-        });
-      }
-      
-      const { error: validationError } = validateSchema(paymentRecordSchema, {
-        bill_id: selectedBill.id,
-        amount_paid: parseFloat(paymentForm.amount_paid),
-        payment_date: paymentForm.payment_date,
-        payment_method: paymentForm.payment_method,
-        reference_number: paymentForm.reference_number,
-        notes: paymentForm.notes
+      // Optimistically update UI before API call
+      const isFullyPaid = paymentAmount >= outstandingBalance;
+      const updatedBill: BillWithTenant = {
+        ...selectedBill,
+        amount_paid: selectedBill.amount_paid + paymentAmount,
+        status: isFullyPaid ? 'fully_paid' as const : 'partially_paid' as const
+      };
+
+      // Optimistically update bills list
+      setBills(prevBills => {
+        if (isFullyPaid) {
+          return prevBills.filter(bill => bill.id !== selectedBill.id);
+        }
+        return prevBills.map(bill => 
+          bill.id === selectedBill.id ? updatedBill : bill
+        );
       });
-      
-      if (validationError) {
-        addToast({
-          type: 'error',
-          title: 'Invalid Input',
-          message: validationError
-        });
-        return;
-      }
+
+      // Optimistically update tenants list
+      setTenants(prevTenants => 
+        prevTenants.map(tenant => {
+          if (tenant.id === selectedBill.tenant?.id) {
+            return {
+              ...tenant,
+              latest_bill: updatedBill,
+              billing_status: isFullyPaid ? 'current' as const : tenant.billing_status
+            };
+          }
+          return tenant;
+        })
+      );
       
       const response = await fetch('/api/payments', {
         method: 'POST',
@@ -797,14 +777,13 @@ export default function BillingPage() {
         },
         body: JSON.stringify({
           bill_id: selectedBill.id,
-          amount_paid: parseFloat(paymentForm.amount_paid),
+          amount_paid: paymentAmount,
           payment_date: paymentForm.payment_date,
           payment_method: paymentForm.payment_method,
           reference_number: paymentForm.reference_number,
           notes: paymentForm.notes
         }),
-        // Add timeout to prevent hanging
-        signal: AbortSignal.timeout(30000) // 30 second timeout
+        signal: AbortSignal.timeout(30000)
       });
       
       const result = await response.json();
@@ -816,10 +795,7 @@ export default function BillingPage() {
           message: 'The payment has been successfully recorded.'
         });
         
-        // Close dialog immediately after successful payment
         setIsPaymentDialogOpen(false);
-        
-        // Reset form
         setPaymentForm({
           amount_paid: '',
           payment_date: new Date().toISOString().split('T')[0],
@@ -828,96 +804,90 @@ export default function BillingPage() {
           notes: ''
         });
         
-        // Handle post-payment operations in a separate try-catch to avoid affecting the main flow
-        try {
-          // Log the event
-          const { data: { user } } = await supabase.auth.getUser();
-          if (user && result.data) {
-            await logAuditEvent(
-              supabase,
-              user.id,
-              'PAYMENT_CREATED',
-              'payments',
-              result.data.id,
-              null,
-              {
-                bill_id: result.data.bill_id,
-                amount: result.data.amount,
-                payment_date: result.data.payment_date,
-              }
-            );
-          }
-        } catch (auditError) {
-          console.error('Audit logging error:', auditError);
-          // Continue with other operations
+        // Clear selected bill if fully paid
+        if (isFullyPaid) {
+          setSelectedBill(null);
         }
-        
-        try {
-          // Invalidate cache and refresh both bills and tenants data
-          invalidateCache('bills');
-          invalidateCache('tenants');
-          invalidateCache('payments');
-          
-          // Immediately remove the bill from local state if it's fully paid
-          const outstandingBalance = selectedBill.total_amount_due - selectedBill.amount_paid;
-          const paymentAmount = parseFloat(paymentForm.amount_paid);
-          
-          if (paymentAmount >= outstandingBalance) {
-            // Bill is now fully paid, remove it from the bills list
-            console.log(`Bill ${selectedBill.id} is now fully paid, removing from local state`);
-            setBills(prevBills => {
-              const filteredBills = prevBills.filter(bill => bill.id !== selectedBill.id);
-              console.log(`Removed bill from local state. Bills count: ${prevBills.length} -> ${filteredBills.length}`);
-              return filteredBills;
-            });
-            // Clear selected bill since it's now fully paid
-            setSelectedBill(null);
-          } else {
-            // Bill is partially paid, update the amount_paid in local state
-            console.log(`Bill ${selectedBill.id} is partially paid, updating local state`);
-            setBills(prevBills => prevBills.map(bill => 
-              bill.id === selectedBill.id 
-                ? { ...bill, amount_paid: bill.amount_paid + paymentAmount, status: 'partially_paid' }
-                : bill
-            ));
-          }
-          
-          // Add a small delay to ensure database transaction is committed
-          await new Promise(resolve => setTimeout(resolve, 500));
-          
-          await Promise.all([
-            fetchActiveBills(),
-            fetchTenantsWithBilling()
-          ]);
-        } catch (refreshError) {
-          console.error('Data refresh error:', refreshError);
-          // As a fallback, just show a message asking user to refresh
-          addToast({
-            type: 'info',
-            title: 'Payment Recorded',
-            message: 'Payment was successful. Please refresh the page to see the updated data.'
-          });
-        }
+
+        // Invalidate cache
+        invalidateCache('bills');
+        invalidateCache('tenants');
+        invalidateCache('payments');
+
+        // Refresh data in background
+        refreshData();
       } else {
+        // Revert optimistic updates on error
         addToast({
           type: 'error',
-          title: 'Error',
-          message: result.error || 'Failed to record payment'
+          title: 'Payment Failed',
+          message: result.error || 'Failed to record payment. Please try again.'
         });
-        setIsPaymentDialogOpen(false); // Close dialog on error
+
+        // Revert bills list
+        setBills(prevBills => {
+          if (isFullyPaid) {
+            return [...prevBills, selectedBill];
+          }
+          return prevBills.map(bill => 
+            bill.id === selectedBill.id ? selectedBill : bill
+          );
+        });
+
+        // Revert tenants list
+        setTenants(prevTenants => 
+          prevTenants.map(tenant => {
+            if (tenant.id === selectedBill.tenant?.id) {
+              return {
+                ...tenant,
+                latest_bill: selectedBill,
+                billing_status: tenant.billing_status
+              };
+            }
+            return tenant;
+          })
+        );
       }
     } catch (error) {
-      console.error('Error recording payment:', error);
+      console.error('Payment error:', error);
       addToast({
         type: 'error',
-        title: 'Error',
-        message: 'An unexpected error occurred while recording the payment.'
+        title: 'Payment Failed',
+        message: 'An error occurred while recording the payment. Please try again.'
       });
-      setIsPaymentDialogOpen(false); // Close dialog on error
     } finally {
       setIsSubmitting(false);
     }
   };
+
+  // Function to refresh data in background
+  const refreshData = useCallback(async () => {
+    try {
+      const [billsResponse, tenantsResponse] = await Promise.all([
+        fetch('/api/bills/active', {
+          headers: { 'Cache-Control': 'no-cache' }
+        }),
+        fetch('/api/tenants/with-billing', {
+          headers: { 'Cache-Control': 'no-cache' }
+        })
+      ]);
+
+      const [billsResult, tenantsResult] = await Promise.all([
+        billsResponse.json(),
+        tenantsResponse.json()
+      ]);
+
+      if (billsResult.success) {
+        setBills(billsResult.data || []);
+      }
+
+      if (tenantsResult.success) {
+        setTenants(tenantsResult.data || []);
+      }
+    } catch (error) {
+      console.error('Data refresh error:', error);
+    }
+  }, []);
 
   const handleApplyPenalties = async () => {
     try {
@@ -1024,62 +994,82 @@ export default function BillingPage() {
     }
   };
 
-  // Filter tenants based on search and filters
-  const filteredTenants = tenants.filter(tenant => {
-    const matchesSearch = searchTerm === '' || 
-      tenant.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      tenant.rooms?.room_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      tenant.rooms?.branches?.name.toLowerCase().includes(searchTerm.toLowerCase());
-    
-    const matchesBranch = branchFilter === 'all' || tenant.rooms?.branches?.id === branchFilter;
-    
-    return matchesSearch && matchesBranch;
-  });
+  // Memoized filtered data for better performance
+  const filteredTenants = useMemo(() => {
+    return tenants.filter(tenant => {
+      const matchesSearch = debouncedSearchTerm === '' || 
+        tenant.full_name.toLowerCase().includes(debouncedSearchTerm.toLowerCase()) ||
+        tenant.rooms?.room_number.toLowerCase().includes(debouncedSearchTerm.toLowerCase()) ||
+        tenant.rooms?.branches?.name.toLowerCase().includes(debouncedSearchTerm.toLowerCase());
+      
+      const matchesBranch = branchFilter === 'all' || tenant.rooms?.branches?.id === branchFilter;
+      
+      return matchesSearch && matchesBranch;
+    });
+  }, [tenants, debouncedSearchTerm, branchFilter]);
 
-  // Filter bills based on search and filters
-  const filteredBills = bills.filter(bill => {
-    const matchesSearch = searchTerm === '' || 
-      bill.tenant?.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      bill.tenant?.rooms?.room_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      bill.tenant?.rooms?.branches?.name.toLowerCase().includes(searchTerm.toLowerCase());
-    
-    const today = new Date();
-    const dueDate = new Date(bill.due_date);
-    const isOverdue = today > dueDate && bill.status !== 'fully_paid';
-    
-    let matchesStatus = true;
-    if (billStatusFilter === 'active') {
-      matchesStatus = bill.status === 'active' && !isOverdue;
-    } else if (billStatusFilter === 'partially_paid') {
-      matchesStatus = bill.status === 'partially_paid';
-    } else if (billStatusFilter === 'overdue') {
-      matchesStatus = isOverdue;
-    }
-    
-    const matchesBranch = branchFilter === 'all' || bill.tenant?.rooms?.branches?.id === branchFilter;
-    
-    return matchesSearch && matchesStatus && matchesBranch;
-  });
+  // Memoized filtered bills for better performance
+  const filteredBills = useMemo(() => {
+    return bills.filter(bill => {
+      const matchesSearch = debouncedSearchTerm === '' || 
+        bill.tenant?.full_name.toLowerCase().includes(debouncedSearchTerm.toLowerCase()) ||
+        bill.tenant?.rooms?.room_number.toLowerCase().includes(debouncedSearchTerm.toLowerCase()) ||
+        bill.tenant?.rooms?.branches?.name.toLowerCase().includes(debouncedSearchTerm.toLowerCase());
+      
+      const today = new Date();
+      const dueDate = new Date(bill.due_date);
+      const isOverdue = today > dueDate && bill.status !== 'fully_paid';
+      
+      let matchesStatus = true;
+      if (billStatusFilter === 'active') {
+        matchesStatus = bill.status === 'active' && !isOverdue;
+      } else if (billStatusFilter === 'partially_paid') {
+        matchesStatus = bill.status === 'partially_paid';
+      } else if (billStatusFilter === 'overdue') {
+        matchesStatus = isOverdue;
+      }
+      
+      const matchesBranch = branchFilter === 'all' || bill.tenant?.rooms?.branches?.id === branchFilter;
+      
+      return matchesSearch && matchesStatus && matchesBranch;
+    });
+  }, [bills, debouncedSearchTerm, billStatusFilter, branchFilter]);
 
-  // Calculate statistics for tenants
-  const totalTenants = tenants.length;
-  const currentTenants = tenants.filter(t => t.billing_status === 'current').length;
-  const overdueTenants = tenants.filter(t => t.billing_status === 'overdue').length;
-  const noBillsTenants = tenants.filter(t => t.billing_status === 'no_bills').length;
+  // Memoized statistics for better performance
+  const tenantStats = useMemo(() => {
+    const totalTenants = tenants.length;
+    const currentTenants = tenants.filter(t => t.billing_status === 'current').length;
+    const overdueTenants = tenants.filter(t => t.billing_status === 'overdue').length;
+    const noBillsTenants = tenants.filter(t => t.billing_status === 'no_bills').length;
+    
+    return {
+      totalTenants,
+      currentTenants,
+      overdueTenants,
+      noBillsTenants
+    };
+  }, [tenants]);
 
-  // Calculate statistics for bills
-  const totalActiveBills = bills.length;
-  const activeBillsCount = bills.filter(bill => {
+  const billStats = useMemo(() => {
     const today = new Date();
-    const dueDate = new Date(bill.due_date);
-    return bill.status === 'active' && today <= dueDate;
-  }).length;
-  const partiallyPaidBills = bills.filter(bill => bill.status === 'partially_paid').length;
-  const overdueBillsCount = bills.filter(bill => {
-    const today = new Date();
-    const dueDate = new Date(bill.due_date);
-    return today > dueDate && bill.status !== 'fully_paid';
-  }).length;
+    const totalActiveBills = bills.length;
+    const activeBillsCount = bills.filter(bill => {
+      const dueDate = new Date(bill.due_date);
+      return bill.status === 'active' && today <= dueDate;
+    }).length;
+    const partiallyPaidBills = bills.filter(bill => bill.status === 'partially_paid').length;
+    const overdueBillsCount = bills.filter(bill => {
+      const dueDate = new Date(bill.due_date);
+      return today > dueDate && bill.status !== 'fully_paid';
+    }).length;
+    
+    return {
+      totalActiveBills,
+      activeBillsCount,
+      partiallyPaidBills,
+      overdueBillsCount
+    };
+  }, [bills]);
 
   const outstandingBalance = selectedBill ? selectedBill.total_amount_due - selectedBill.amount_paid : 0;
   const paymentAmount = parseFloat(paymentForm.amount_paid) || 0;
@@ -1205,14 +1195,44 @@ export default function BillingPage() {
         
         // Handle post-update operations in a separate try-catch to avoid affecting the main flow
         try {
-          // Invalidate cache and refresh data
+          // Invalidate cache
           invalidateCache('bills');
           invalidateCache('tenants');
           
-          await Promise.all([
-            fetchActiveBills(),
-            fetchTenantsWithBilling()
+          // Optimistically update the bills list with the updated bill
+          const updatedBill = result.data;
+          if (updatedBill) {
+            setBills(prevBills => 
+              prevBills.map(bill => 
+                bill.id === selectedBill.id ? updatedBill : bill
+              )
+            );
+            // Update selected bill to reflect new status
+            setSelectedBill(updatedBill);
+          }
+
+          // Refresh data in background
+          const [billsResponse, tenantsResponse] = await Promise.all([
+            fetch('/api/bills/active', {
+              headers: { 'Cache-Control': 'no-cache' }
+            }),
+            fetch('/api/tenants/with-billing', {
+              headers: { 'Cache-Control': 'no-cache' }
+            })
           ]);
+
+          const [billsResult, tenantsResult] = await Promise.all([
+            billsResponse.json(),
+            tenantsResponse.json()
+          ]);
+
+          if (billsResult.success) {
+            setBills(billsResult.data || []);
+          }
+
+          if (tenantsResult.success) {
+            setTenants(tenantsResult.data || []);
+          }
         } catch (refreshError) {
           console.error('Data refresh error:', refreshError);
           addToast({
@@ -1276,8 +1296,10 @@ export default function BillingPage() {
   const renderActiveBills = () => {
     if (isLoadingBills) {
       return (
-        <div className="flex items-center justify-center p-12">
-          <div className="loading-spinner h-8 w-8" />
+        <div className="space-y-4">
+          {Array.from({ length: 3 }).map((_, index) => (
+            <BillCardSkeleton key={index} />
+          ))}
         </div>
       );
     }
@@ -1471,22 +1493,8 @@ export default function BillingPage() {
     });
   };
 
-  if (isLoadingTenants) {
-    return (
-      <div className="space-y-6 px-4 sm:px-6 lg:px-8">
-        <div className="page-header -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8 py-6 mb-8">
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="loading-skeleton h-8 w-64 mb-2"></div>
-              <div className="loading-skeleton h-4 w-96"></div>
-            </div>
-          </div>
-        </div>
-        <div className="flex items-center justify-center py-16">
-          <div className="loading-spinner h-12 w-12" />
-        </div>
-      </div>
-    );
+  if (isLoadingTenants && tenants.length === 0) {
+    return <BillingPageSkeleton />;
   }
 
   return (
@@ -1553,7 +1561,13 @@ export default function BillingPage() {
 
           {/* Enhanced Tenant Cards Grid */}
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-            {filteredTenants.map((tenant) => (
+            {isLoadingTenants ? (
+              // Show skeleton cards while loading
+              Array.from({ length: 6 }).map((_, index) => (
+                <TenantCardSkeleton key={index} />
+              ))
+            ) : (
+              filteredTenants.map((tenant) => (
               <Card key={tenant.id} className="card-elevated group hover:scale-[1.02] transition-all duration-200">
                 <CardHeader className="pb-4">
                   <div className="flex items-start justify-between mb-3">
@@ -1626,10 +1640,11 @@ export default function BillingPage() {
                   </Button>
                 </CardContent>
               </Card>
-            ))}
+              ))
+            )}
           </div>
 
-          {filteredTenants.length === 0 && (
+          {!isLoadingTenants && filteredTenants.length === 0 && (
             <div className="empty-state py-16">
               <Receipt className="empty-state-icon" />
               <h3 className="empty-state-title">No tenants found</h3>
