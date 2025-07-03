@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -52,7 +51,6 @@ import {
 type HistoryTab = 'audit-logs' | 'paid-bills' | 'moved-out-tenants';
 
 export default function HistoryPage() {
-  const supabase = createClientComponentClient();
   // Set page title and subtitle
   usePageTitleEffect('History', 'Comprehensive historical data and audit trails');
   
@@ -75,28 +73,6 @@ export default function HistoryPage() {
 
   useEffect(() => {
     fetchData();
-
-    // Set up real-time subscription for audit logs
-    const channel = supabase
-      .channel('audit_logs_changes')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'audit_logs'
-        },
-        (payload) => {
-          console.log('Real-time update received:', payload);
-          fetchData(); // Refresh data when changes occur
-        }
-      )
-      .subscribe();
-
-    // Cleanup subscription
-    return () => {
-      channel.unsubscribe();
-    };
   }, [activeTab]);
 
   const fetchData = async () => {
@@ -355,156 +331,51 @@ export default function HistoryPage() {
   // Update the audit logs table to make the View Details button clickable
   const renderAuditLogsTable = () => {
     return (
-      <div className="space-y-4">
-        <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between">
-          <div className="flex flex-col md:flex-row gap-4 items-start md:items-center">
-            <div className="w-full md:w-64">
-              <Label htmlFor="search">Search</Label>
-              <div className="relative">
-                <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                <Input
-                  id="search"
-                  placeholder="Search logs..."
-                  className="pl-8"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                />
-              </div>
-            </div>
-            <div className="w-full md:w-48">
-              <Label htmlFor="action-filter">Action</Label>
-              <Select value={actionFilter} onValueChange={setActionFilter}>
-                <SelectTrigger id="action-filter">
-                  <SelectValue placeholder="Filter by action" />
-                </SelectTrigger>
-                <SelectContent>
-                  {uniqueActions.map((action) => (
-                    <SelectItem key={action} value={action}>
-                      {action === 'all' ? 'All Actions' : formatAuditAction(action)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="w-full md:w-48">
-              <Label htmlFor="date-filter">Date</Label>
-              <Input
-                id="date-filter"
-                type="date"
-                value={dateFilter}
-                onChange={(e) => setDateFilter(e.target.value)}
-              />
-            </div>
-          </div>
-          <Button
-            variant="outline"
-            onClick={fetchData}
-            className="w-full md:w-auto"
-          >
-            <Filter className="mr-2 h-4 w-4" />
-            Reset Filters
-          </Button>
-        </div>
-
-        {isLoading ? (
-          <div className="flex justify-center items-center py-8">
-            <Loader2 className="h-8 w-8 animate-spin" />
-          </div>
-        ) : filteredAuditLogs.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-8 text-center">
-            <Activity className="h-12 w-12 text-muted-foreground mb-4" />
-            <h3 className="text-lg font-medium">No audit logs found</h3>
-            <p className="text-sm text-muted-foreground">
-              Try adjusting your filters or search term
-            </p>
-          </div>
-        ) : (
-          <div className="rounded-md border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Timestamp</TableHead>
-                  <TableHead>User</TableHead>
-                  <TableHead>Action</TableHead>
-                  <TableHead>Target</TableHead>
-                  <TableHead className="text-right">Details</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredAuditLogs.map((log) => (
+      <div className="table-container flex-1">
+        <div className="table-scroll">
+          <Table>
+            <TableHeader className="table-header-normal">
+              <TableRow>
+                <TableHead className="min-w-[150px]">Timestamp</TableHead>
+                <TableHead className="min-w-[120px]">User</TableHead>
+                <TableHead className="min-w-[100px]">Action</TableHead>
+                <TableHead className="min-w-[100px]">Target</TableHead>
+                <TableHead className="text-right min-w-[120px]">Changes</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filteredAuditLogs.length > 0 ? (
+                filteredAuditLogs.map((log) => (
                   <TableRow key={log.id}>
-                    <TableCell className="font-mono">
-                      {formatTimestamp(log.timestamp)}
-                    </TableCell>
-                    <TableCell>{log.user_display_name}</TableCell>
-                    <TableCell>
-                      <span className="inline-flex items-center gap-1">
-                        {getActionIcon(log.action)}
-                        {formatAuditAction(log.action)}
-                      </span>
-                    </TableCell>
-                    <TableCell>
-                      <span className="inline-flex items-center gap-1">
-                        {getTableIcon(log.target_table)}
-                        {formatTargetTable(log.target_table)}
-                      </span>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Button
-                        variant="ghost"
+                    <TableCell className="min-w-[150px] table-cell-nowrap">{formatTimestamp(log.timestamp)}</TableCell>
+                    <TableCell className="min-w-[120px] table-cell-nowrap">{(log as any).user_display_name || 'System'}</TableCell>
+                    <TableCell className="min-w-[100px] table-cell-nowrap">{formatAuditAction(log.action)}</TableCell>
+                    <TableCell className="min-w-[100px] table-cell-nowrap">{formatTargetTable(log.target_table)}</TableCell>
+                    <TableCell className="text-right min-w-[120px]">
+                      <Button 
+                        variant="outline" 
                         size="sm"
                         onClick={() => handleViewDetails(log)}
+                        className="flex items-center gap-1"
                       >
-                        <Eye className="h-4 w-4 mr-1" />
-                        View
+                        <Eye className="h-3.5 w-3.5" />
+                        View Details
                       </Button>
                     </TableCell>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        )}
+                ))
+              ) : (
+                <TableRow>
+                  <TableCell colSpan={5} className="h-24 text-center">
+                    No audit logs found.
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </div>
       </div>
     );
-  };
-
-  // Helper function to get icon for action
-  const getActionIcon = (action: string) => {
-    switch (action.toLowerCase()) {
-      case 'create':
-        return <Check className="h-4 w-4 text-green-500" />;
-      case 'update':
-        return <AlertCircle className="h-4 w-4 text-yellow-500" />;
-      case 'delete':
-        return <X className="h-4 w-4 text-red-500" />;
-      default:
-        return <Activity className="h-4 w-4 text-gray-500" />;
-    }
-  };
-
-  // Helper function to get icon for table
-  const getTableIcon = (table: string) => {
-    switch (table.toLowerCase()) {
-      case 'branches':
-        return <Building2 className="h-4 w-4" />;
-      case 'rooms':
-        return <Home className="h-4 w-4" />;
-      case 'tenants':
-        return <User className="h-4 w-4" />;
-      case 'bills':
-        return <Receipt className="h-4 w-4" />;
-      case 'payments':
-        return <CreditCard className="h-4 w-4" />;
-      case 'settings':
-        return <Shield className="h-4 w-4" />;
-      case 'electricity_readings':
-        return <Zap className="h-4 w-4" />;
-      case 'water_readings':
-        return <Droplets className="h-4 w-4" />;
-      default:
-        return <FileText className="h-4 w-4" />;
-    }
   };
 
   // Update the paid bills section to include branch info and view details button
@@ -636,19 +507,53 @@ export default function HistoryPage() {
     switch (activeTab) {
       case 'audit-logs':
         return (
-          <Card className="flex flex-col h-full">
+          <Card className="flex flex-col h-[600px]">
             <CardHeader className="flex-shrink-0">
               <CardTitle>System Activity Logs</CardTitle>
               <CardDescription>Comprehensive audit trail of all system activities.</CardDescription>
             </CardHeader>
             <CardContent className="flex-1 flex flex-col min-h-0 p-6">
-              {renderAuditLogsTable()}
+              <div className="flex flex-col sm:flex-row gap-4 mb-6 flex-shrink-0">
+                <div className="flex-1">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input 
+                      placeholder="Search by action, target, or user..." 
+                      className="pl-10"
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                    />
+                  </div>
+                </div>
+                <Select value={actionFilter} onValueChange={setActionFilter}>
+                  <SelectTrigger className="w-full sm:w-[200px]">
+                    <Filter className="h-4 w-4 mr-2" />
+                    <SelectValue placeholder="Filter by action" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {uniqueActions.map(action => (
+                      <SelectItem key={action} value={action}>
+                        {action === 'all' ? 'All Actions' : action}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Input
+                  type="date"
+                  className="w-full sm:w-auto"
+                  value={dateFilter}
+                  onChange={(e) => setDateFilter(e.target.value)}
+                />
+              </div>
+              <div className="flex-1 min-h-0">
+                {renderAuditLogsTable()}
+              </div>
             </CardContent>
           </Card>
         );
       case 'paid-bills':
         return (
-          <Card className="flex flex-col h-full">
+          <Card className="flex flex-col h-[600px]">
             <CardHeader className="flex-shrink-0">
               <CardTitle>Paid Bills History</CardTitle>
               <CardDescription>Records of all fully settled bills.</CardDescription>
@@ -673,7 +578,7 @@ export default function HistoryPage() {
         );
       case 'moved-out-tenants':
         return (
-          <Card className="flex flex-col h-full">
+          <Card className="flex flex-col h-[600px]">
             <CardHeader className="flex-shrink-0">
               <CardTitle>Moved-Out Tenant History</CardTitle>
               <CardDescription>Records of all tenants who have moved out.</CardDescription>
@@ -702,13 +607,13 @@ export default function HistoryPage() {
   };
 
   return (
-    <div className="flex flex-col h-full px-3 sm:px-0">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 flex-shrink-0">
+    <div className="flex flex-col h-[calc(100vh-100px)] px-3 sm:px-0">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div className="flex-1">
           {/* Title now shown in header */}
         </div>
       </div>
-      <div className="border-b flex-shrink-0">
+      <div className="border-b">
         <div className="flex flex-col sm:flex-row sm:space-x-8 space-y-2 sm:space-y-0">
           <button
             onClick={() => setActiveTab('audit-logs')}
@@ -745,7 +650,7 @@ export default function HistoryPage() {
           </button>
         </div>
       </div>
-      <div className="flex-1 py-4 min-h-0">{renderContent()}</div>
+      <div className="flex-grow py-4 overflow-y-hidden">{renderContent()}</div>
 
       {/* Audit Log Details Dialog */}
       <Dialog open={isDetailsOpen} onOpenChange={setIsDetailsOpen}>

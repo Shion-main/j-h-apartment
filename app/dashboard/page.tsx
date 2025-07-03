@@ -4,7 +4,7 @@ import React, { useState, useEffect, useMemo, useCallback, memo, Suspense } from
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import { getSupabaseClient } from '@/lib/supabase/client';
@@ -184,7 +184,10 @@ function DashboardPage() {
     amount: '',
     description: '',
     category: '',
-    expense_date: new Date().toISOString().split('T')[0],
+    expense_date: (() => {
+      const today = new Date();
+      return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    })(),
     branch_id: ''
   });
   const [branches, setBranches] = useState<any[]>([]);
@@ -371,15 +374,28 @@ function DashboardPage() {
           .select('id, name')
           .order('name');
         
-        if (error) throw error;
+        if (error) {
+          toast({
+            title: 'Error',
+            description: 'Failed to fetch branches: ' + error.message,
+            variant: 'destructive'
+          });
+          throw error;
+        }
+        console.log('Fetched branches:', data);
         setBranches(data || []);
       } catch (error) {
         console.error('Error fetching branches:', error);
+        toast({
+          title: 'Error',
+          description: 'Error fetching branches. See console for details.',
+          variant: 'destructive'
+        });
       }
     };
     
     fetchBranches();
-  }, [supabase]);
+  }, [supabase, toast]);
 
   // Debounced month change handler
   const handleMonthChange = useCallback((newMonth: string) => {
@@ -455,10 +471,18 @@ function DashboardPage() {
 
   // Handle expense submission
   const handleExpenseSubmit = useCallback(async () => {
-    if (!expenseForm.amount || !expenseForm.description || !expenseForm.branch_id) {
+    if (!expenseForm.amount || !expenseForm.description) {
       toast({
         title: "Error",
         description: "Please fill in all required fields",
+        variant: "destructive"
+      });
+      return;
+    }
+    if (!expenseForm.branch_id) {
+      toast({
+        title: "Error",
+        description: "Please select a branch for this expense.",
         variant: "destructive"
       });
       return;
@@ -476,15 +500,14 @@ function DashboardPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...expenseForm,
-          amount: parseFloat(expenseForm.amount),
-          user_id: user.id
+          amount: parseFloat(expenseForm.amount)
         })
       });
 
-      if (!response.ok) throw new Error('Failed to add expense');
-
       const result = await response.json();
-      if (!result.success) throw new Error(result.error);
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || 'Failed to add expense');
+      }
 
       toast({
         title: "Success",
@@ -496,7 +519,10 @@ function DashboardPage() {
         amount: '',
         description: '',
         category: '',
-        expense_date: new Date().toISOString().split('T')[0],
+        expense_date: (() => {
+          const today = new Date();
+          return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+        })(),
         branch_id: ''
       });
       setExpensesDialogOpen(false);
@@ -508,7 +534,7 @@ function DashboardPage() {
       console.error('Error adding expense:', error);
       toast({
         title: "Error",
-        description: error instanceof Error ? error.message : "Failed to add expense",
+        description: error instanceof Error ? error.message : (typeof error === 'string' ? error : "Failed to add expense"),
         variant: "destructive"
       });
     } finally {
@@ -538,6 +564,9 @@ function DashboardPage() {
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Add Company Expense</DialogTitle>
+          <DialogDescription>
+            Fill in the details below to add a new company expense. All fields marked with * are required.
+          </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 py-4">
           <div className="grid grid-cols-2 gap-4">
@@ -573,12 +602,26 @@ function DashboardPage() {
           </div>
           <div className="grid gap-2">
             <Label htmlFor="category">Category</Label>
-            <Input
-              id="category"
+            <Select
               value={expenseForm.category}
-              onChange={(e) => setExpenseForm(prev => ({ ...prev, category: e.target.value }))}
-              placeholder="labor"
-            />
+              onValueChange={(value) => setExpenseForm(prev => ({ ...prev, category: value }))}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select category" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="Office Supplies">Office Supplies</SelectItem>
+                <SelectItem value="Utilities">Utilities</SelectItem>
+                <SelectItem value="Maintenance">Maintenance</SelectItem>
+                <SelectItem value="Marketing">Marketing</SelectItem>
+                <SelectItem value="Legal & Professional">Legal & Professional</SelectItem>
+                <SelectItem value="Insurance">Insurance</SelectItem>
+                <SelectItem value="Travel">Travel</SelectItem>
+                <SelectItem value="Equipment">Equipment</SelectItem>
+                <SelectItem value="Software & Subscriptions">Software & Subscriptions</SelectItem>
+                <SelectItem value="Miscellaneous">Miscellaneous</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
           <div className="grid gap-2">
             <Label htmlFor="branch">Branch</Label>
@@ -608,7 +651,7 @@ function DashboardPage() {
           </Button>
           <Button
             onClick={handleExpenseSubmit}
-            disabled={isAddingExpense}
+            disabled={isAddingExpense || !expenseForm.branch_id}
           >
             {isAddingExpense ? (
               <>

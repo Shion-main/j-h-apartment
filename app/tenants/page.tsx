@@ -169,7 +169,7 @@ export default function TenantsPage() {
   const fetchTenants = async () => {
     try {
       setIsLoading(true);
-      const response = await fetch('/api/tenants');
+      const response = await fetch('/api/tenants', { headers: { 'Cache-Control': 'no-cache' } });
       const result = await response.json();
       
       if (result.success) {
@@ -414,8 +414,15 @@ export default function TenantsPage() {
           message: 'The tenant\'s contract has been successfully renewed for 6 more months.',
           duration: 5000
         });
-        
-        // Refresh tenant data
+        // Update contract_end_date in local state for instant UI feedback
+        setTenants(prev =>
+          prev.map(t =>
+            t.id === tenantId && result.data?.contract_end_date
+              ? { ...t, contract_end_date: result.data.contract_end_date }
+              : t
+          )
+        );
+        // Refresh tenant data from backend
         fetchTenants();
       } else {
         addToast({
@@ -774,6 +781,7 @@ export default function TenantsPage() {
                       min="0"
                       step="1"
                       placeholder="Enter initial reading"
+                      required
                     />
                   </div>
                 </div>

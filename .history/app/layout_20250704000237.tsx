@@ -54,9 +54,9 @@ export default function RootLayout({
         </head>
         <body className="font-sans bg-background text-foreground">
           <PageTitleProvider>
-            <ToasterProvider>
-              {children}
-            </ToasterProvider>
+          <ToasterProvider>
+            {children}
+          </ToasterProvider>
           </PageTitleProvider>
         </body>
       </html>
@@ -71,13 +71,13 @@ export default function RootLayout({
         <link rel="shortcut icon" href="/lib/Logo/J-H LOGO-BLUE.png" />
         <link rel="apple-touch-icon" href="/lib/Logo/J-H LOGO-BLUE.png" />
       </head>
-      <body className={inter.className}>
+      <body className={`${inter.className} h-screen overflow-hidden`}>
         <PageTitleProvider>
-          <ToasterProvider>
-            <DashboardLayout>
-              {children}
-            </DashboardLayout>
-          </ToasterProvider>
+        <ToasterProvider>
+          <DashboardLayout>
+            {children}
+          </DashboardLayout>
+        </ToasterProvider>
         </PageTitleProvider>
       </body>
     </html>

@@ -20,14 +20,6 @@ const nextConfig = {
     },
     serverComponentsExternalPackages: ['@supabase/supabase-js'],
     optimizePackageImports: ['@heroicons/react'],
-    turbo: {
-      rules: {
-        '*.svg': {
-          loaders: ['@svgr/webpack'],
-          as: '*.js',
-        },
-      },
-    },
   },
   
   // Image optimization
