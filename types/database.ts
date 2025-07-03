@@ -151,9 +151,16 @@ export interface AuditLog {
   action: string;
   target_table: string;
   target_id: string;
-  old_values: any; // JSON for monetary/date changes
-  new_values: any; // JSON for monetary/date changes
+  old_values?: any;
+  new_values?: any;
   timestamp: string;
+  user_display_name?: string;
+  auth_users?: {
+    email: string;
+    user_metadata: {
+      full_name?: string;
+    };
+  };
   // Joined data
   user?: User;
 }

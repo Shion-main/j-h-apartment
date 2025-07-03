@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -102,8 +102,8 @@ interface Room {
   created_at: string;
 }
 
-// Sub-components
-const BranchRooms = ({ branch, onRoomsUpdate }: { branch: Branch; onRoomsUpdate: () => void }) => {
+// Sub-components - Memoized to prevent unnecessary re-renders
+const BranchRooms = React.memo(({ branch, onRoomsUpdate }: { branch: Branch; onRoomsUpdate: () => void }) => {
   const [rooms, setRooms] = useState<Room[]>(branch.rooms || []);
   const [isLoading, setIsLoading] = useState(false);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -119,10 +119,19 @@ const BranchRooms = ({ branch, onRoomsUpdate }: { branch: Branch; onRoomsUpdate:
   });
 
   useEffect(() => {
-    setRooms(branch.rooms || []);
-  }, [branch.rooms]);
+    // Load rooms on-demand when component mounts or branch changes
+    if (branch.rooms && branch.rooms.length > 0) {
+      setRooms(branch.rooms);
+    } else if ((branch.total_rooms || 0) > 0 && !isLoading && rooms.length === 0) {
+      // Only fetch if we know there are rooms to fetch and haven't loaded them yet
+      fetchRooms();
+    }
+  }, [branch.id, branch.total_rooms]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const fetchRooms = async () => {
+    // Don't fetch if already loading or if rooms are already loaded for this branch
+    if (isLoading) return;
+    
     try {
       setIsLoading(true);
       const { data, error } = await supabase
@@ -133,7 +142,7 @@ const BranchRooms = ({ branch, onRoomsUpdate }: { branch: Branch; onRoomsUpdate:
 
       if (error) throw error;
       setRooms(data || []);
-      onRoomsUpdate(); // Refresh the parent component
+      // Don't call onRoomsUpdate() here as it causes parent re-renders and flickering
     } catch (error) {
       console.error('Error fetching rooms:', error);
       addToast({
@@ -217,7 +226,9 @@ const BranchRooms = ({ branch, onRoomsUpdate }: { branch: Branch; onRoomsUpdate:
         });
       }
 
+      // Refresh rooms list and update parent stats
       await fetchRooms();
+      onRoomsUpdate(); // Only call when needed after operations
       setIsDialogOpen(false);
       setEditingRoom(null);
       reset();
@@ -254,7 +265,8 @@ const BranchRooms = ({ branch, onRoomsUpdate }: { branch: Branch; onRoomsUpdate:
         title: 'Room Deleted',
         message: `Room ${room.room_number} has been deleted.`,
       });
-      fetchRooms(); // Refresh the list
+      await fetchRooms(); // Refresh the list
+      onRoomsUpdate(); // Update parent stats after deletion
     } catch (error: any) {
       console.error('Error deleting room:', error);
       addToast({
@@ -400,7 +412,7 @@ const BranchRooms = ({ branch, onRoomsUpdate }: { branch: Branch; onRoomsUpdate:
       )}
     </div>
   );
-};
+});
 
 const EditBranchDialog = ({ branch, branches, onUpdate }: { branch: Branch; branches: Branch[]; onUpdate: () => void }) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -593,33 +605,54 @@ export default function BranchManager() {
   const fetchData = async () => {
     setIsLoading(true);
     try {
-      const { data: branchesData, error: branchesError } = await supabase
-        .from('branches')
-        .select(`
-          *,
-          rooms (*)
-        `)
-        .order('name');
+      // Parallel fetch for better performance
+      const [branchesResult, roomStatsResult, settingsResult] = await Promise.all([
+        // Fetch branches without rooms for faster initial load
+        supabase
+          .from('branches')
+          .select('*')
+          .order('name'),
+        
+        // Fetch room statistics separately
+        supabase
+          .from('rooms')
+          .select('branch_id, is_occupied'),
+        
+        // Fetch system settings
+        supabase
+          .from('system_settings')
+          .select('key, value')
+          .in('key', ['default_monthly_rent_rate', 'default_water_rate', 'default_electricity_rate'])
+      ]);
 
-      if (branchesError) throw branchesError;
+      if (branchesResult.error) throw branchesResult.error;
+      if (roomStatsResult.error) throw roomStatsResult.error;
+      if (settingsResult.error) throw settingsResult.error;
 
-      const branchesWithStats = branchesData?.map(branch => ({
+      // Calculate room statistics by branch
+      const roomStatsByBranch = (roomStatsResult.data || []).reduce((acc, room) => {
+        if (!acc[room.branch_id]) {
+          acc[room.branch_id] = { total: 0, occupied: 0 };
+        }
+        acc[room.branch_id].total += 1;
+        if (room.is_occupied) {
+          acc[room.branch_id].occupied += 1;
+        }
+        return acc;
+      }, {} as Record<string, { total: number; occupied: number }>);
+
+      // Add room statistics to branches
+      const branchesWithStats = (branchesResult.data || []).map(branch => ({
         ...branch,
-        total_rooms: branch.rooms?.length || 0,
-        occupied_rooms: branch.rooms?.filter((room: any) => room.is_occupied).length || 0
-      })) || [];
+        total_rooms: roomStatsByBranch[branch.id]?.total || 0,
+        occupied_rooms: roomStatsByBranch[branch.id]?.occupied || 0,
+        rooms: [] // We'll load rooms on-demand when needed
+      }));
 
       setBranches(branchesWithStats);
 
-      // Fetch system settings to get default rates
-      const { data: settingsData, error: settingsError } = await supabase
-        .from('system_settings')
-        .select('key, value')
-        .in('key', ['default_monthly_rent_rate', 'default_water_rate', 'default_electricity_rate']);
-
-      if (settingsError) throw settingsError;
-
-      const defaultRates = settingsData.reduce((acc, setting) => {
+      // Process default rates
+      const defaultRates = (settingsResult.data || []).reduce((acc, setting) => {
         if (setting.key === 'default_monthly_rent_rate') acc.monthly_rent_rate = parseFloat(setting.value || '0');
         if (setting.key === 'default_water_rate') acc.water_rate = parseFloat(setting.value || '0');
         if (setting.key === 'default_electricity_rate') acc.electricity_rate = parseFloat(setting.value || '0');

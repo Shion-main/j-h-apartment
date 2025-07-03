@@ -5,6 +5,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Label } from '@/components/ui/label';
 import { getSupabaseClient } from '@/lib/supabase/client';
 import { useToast } from '@/components/ui/use-toast';
 import { usePageTitleEffect } from '@/lib/hooks/usePageTitleEffect';
@@ -20,7 +22,8 @@ import {
   ChartBarIcon,
   TableCellsIcon,
   ExclamationTriangleIcon,
-  CheckCircleIcon
+  CheckCircleIcon,
+  PlusIcon
 } from '@heroicons/react/24/outline';
 
 interface DashboardStats {
@@ -173,6 +176,18 @@ function DashboardPage() {
   const [emailAddresses, setEmailAddresses] = useState('');
   const [isSendingEmail, setIsSendingEmail] = useState(false);
   const [isSendingReminders, setIsSendingReminders] = useState(false);
+  
+  // Add expenses states
+  const [expensesDialogOpen, setExpensesDialogOpen] = useState(false);
+  const [isAddingExpense, setIsAddingExpense] = useState(false);
+  const [expenseForm, setExpenseForm] = useState({
+    amount: '',
+    description: '',
+    category: '',
+    expense_date: new Date().toISOString().split('T')[0],
+    branch_id: ''
+  });
+  const [branches, setBranches] = useState<any[]>([]);
   
   // Persistent cache with better structure
   const [apiCache] = useState(() => new Map<string, { data: any; timestamp: number; ttl: number }>());
@@ -347,6 +362,25 @@ function DashboardPage() {
     fetchConsolidatedReport();
   }, [fetchConsolidatedReport]);
 
+  // Fetch branches for expense form
+  useEffect(() => {
+    const fetchBranches = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('branches')
+          .select('id, name')
+          .order('name');
+        
+        if (error) throw error;
+        setBranches(data || []);
+      } catch (error) {
+        console.error('Error fetching branches:', error);
+      }
+    };
+    
+    fetchBranches();
+  }, [supabase]);
+
   // Debounced month change handler
   const handleMonthChange = useCallback((newMonth: string) => {
     setSelectedMonth(newMonth);
@@ -419,6 +453,69 @@ function DashboardPage() {
     }
   }, [emailAddresses, selectedMonth, toast]);
 
+  // Handle expense submission
+  const handleExpenseSubmit = useCallback(async () => {
+    if (!expenseForm.amount || !expenseForm.description || !expenseForm.branch_id) {
+      toast({
+        title: "Error",
+        description: "Please fill in all required fields",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setIsAddingExpense(true);
+    try {
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError || !user) {
+        throw new Error('Authentication required');
+      }
+
+      const response = await fetch('/api/expenses', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...expenseForm,
+          amount: parseFloat(expenseForm.amount),
+          user_id: user.id
+        })
+      });
+
+      if (!response.ok) throw new Error('Failed to add expense');
+
+      const result = await response.json();
+      if (!result.success) throw new Error(result.error);
+
+      toast({
+        title: "Success",
+        description: "Expense added successfully"
+      });
+
+      // Reset form and close dialog
+      setExpenseForm({
+        amount: '',
+        description: '',
+        category: '',
+        expense_date: new Date().toISOString().split('T')[0],
+        branch_id: ''
+      });
+      setExpensesDialogOpen(false);
+
+      // Refresh data
+      fetchDashboardStats();
+      fetchConsolidatedReport();
+    } catch (error) {
+      console.error('Error adding expense:', error);
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to add expense",
+        variant: "destructive"
+      });
+    } finally {
+      setIsAddingExpense(false);
+    }
+  }, [expenseForm, supabase, toast, fetchDashboardStats, fetchConsolidatedReport]);
+
   // Memoized calculated values to prevent recalculation on every render
   const { occupancyRate, profit, isProfit } = useMemo(() => {
     const rate = stats.totalRooms > 0 ? (stats.occupiedRooms / stats.totalRooms) * 100 : 0;
@@ -434,6 +531,98 @@ function DashboardPage() {
   // Memoized format functions
   const formatOccupancyRate = useCallback((rate: number) => `${rate.toFixed(1)}%`, []);
   const formatRoomCount = useCallback((occupied: number, total: number) => `${occupied}/${total}`, []);
+
+  // Render expense dialog
+  const renderExpenseDialog = () => (
+    <Dialog open={expensesDialogOpen} onOpenChange={setExpensesDialogOpen}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Add Company Expense</DialogTitle>
+        </DialogHeader>
+        <div className="grid gap-4 py-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="grid gap-2">
+              <Label htmlFor="amount">Amount (PHP)</Label>
+              <Input
+                id="amount"
+                type="number"
+                min="0"
+                value={expenseForm.amount}
+                onChange={(e) => setExpenseForm(prev => ({ ...prev, amount: e.target.value }))}
+                placeholder="2000"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="expense_date">Date</Label>
+              <Input
+                id="expense_date"
+                type="date"
+                value={expenseForm.expense_date}
+                onChange={(e) => setExpenseForm(prev => ({ ...prev, expense_date: e.target.value }))}
+              />
+            </div>
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="description">Description</Label>
+            <Input
+              id="description"
+              value={expenseForm.description}
+              onChange={(e) => setExpenseForm(prev => ({ ...prev, description: e.target.value }))}
+              placeholder="Expense description"
+            />
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="category">Category</Label>
+            <Input
+              id="category"
+              value={expenseForm.category}
+              onChange={(e) => setExpenseForm(prev => ({ ...prev, category: e.target.value }))}
+              placeholder="labor"
+            />
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="branch">Branch</Label>
+            <Select 
+              value={expenseForm.branch_id} 
+              onValueChange={(value) => setExpenseForm(prev => ({ ...prev, branch_id: value }))}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select branch" />
+              </SelectTrigger>
+              <SelectContent>
+                {branches.map((branch) => (
+                  <SelectItem key={branch.id} value={branch.id}>
+                    {branch.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+        <div className="flex justify-end gap-4">
+          <Button
+            variant="outline"
+            onClick={() => setExpensesDialogOpen(false)}
+            disabled={isAddingExpense}
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={handleExpenseSubmit}
+            disabled={isAddingExpense}
+          >
+            {isAddingExpense ? (
+              <>
+                <span className="mr-2">Adding...</span>
+                <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+              </>
+            ) : (
+              'Add Expense'
+            )}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
 
   if (isLoading) {
     return (
@@ -615,6 +804,18 @@ function DashboardPage() {
 
                 {/* Action Buttons */}
                 <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2">
+                  <Dialog open={expensesDialogOpen} onOpenChange={setExpensesDialogOpen}>
+                    <DialogTrigger asChild>
+                      <Button
+                        size="sm"
+                        className="flex items-center space-x-2 bg-green-600 hover:bg-green-700 text-white"
+                      >
+                        <PlusIcon className="h-4 w-4" />
+                        <span>Add Expense</span>
+                      </Button>
+                    </DialogTrigger>
+                  </Dialog>
+                  
                   <Dialog open={emailDialogOpen} onOpenChange={setEmailDialogOpen}>
                     <DialogTrigger asChild>
                       <Button
@@ -657,6 +858,8 @@ function DashboardPage() {
             </CardContent>
           </Card>
         </div>
+
+        {renderExpenseDialog()}
       </div>
     </div>
   );

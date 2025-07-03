@@ -220,6 +220,8 @@ export default function TenantsPage() {
       if (branchId) {
         url.searchParams.append('branch_id', branchId);
       }
+      // Add cache buster to ensure fresh data
+      url.searchParams.append('_cache_bust', Date.now().toString());
 
       console.log('Fetching rooms from:', url.toString()); // Debug log
 
@@ -322,9 +324,17 @@ export default function TenantsPage() {
           security_deposit_received: false
         });
 
+        // Invalidate all related caches first
+        invalidateCache('tenants');
+        invalidateCache('rooms');
+        invalidateCache('available-rooms');
+        invalidateCache('bills');
+        
         // Refresh data
-        fetchTenants();
-        fetchAvailableRooms();
+        await Promise.all([
+          fetchTenants(),
+          fetchAvailableRooms()
+        ]);
       } else {
         throw new Error(result.error || 'Failed to add tenant');
       }

@@ -3,14 +3,28 @@ import { headers } from 'next/headers'
 import './globals.css'
 import DashboardLayout from '@/components/layout/DashboardLayout'
 import ToasterProvider from '@/components/layout/Toaster'
+import { Inter } from 'next/font/google'
+
+const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
-  title: 'J&H Management System',
-  description: 'Property management system for J&H Management',
+  title: 'J&H Apartment Management',
+  description: 'Manage your apartment rentals efficiently',
   icons: {
-    icon: '/favicon.ico',
-    shortcut: '/favicon-16x16.png',
-    apple: '/apple-touch-icon.png',
+    icon: [
+      {
+        url: '/lib/Logo/J-H LOGO-BLUE.png',
+        sizes: '32x32',
+        type: 'image/png',
+      },
+      {
+        url: '/lib/Logo/J-H LOGO-BLUE.png',
+        sizes: '16x16',
+        type: 'image/png',
+      }
+    ],
+    shortcut: '/lib/Logo/J-H LOGO-BLUE.png',
+    apple: '/lib/Logo/J-H LOGO-BLUE.png',
   },
 }
 
@@ -31,6 +45,12 @@ export default function RootLayout({
   if (isLoginPage) {
     return (
       <html lang="en" suppressHydrationWarning className="antialiased">
+        <head>
+          <link rel="icon" type="image/png" sizes="32x32" href="/lib/Logo/J-H LOGO-BLUE.png" />
+          <link rel="icon" type="image/png" sizes="16x16" href="/lib/Logo/J-H LOGO-BLUE.png" />
+          <link rel="shortcut icon" href="/lib/Logo/J-H LOGO-BLUE.png" />
+          <link rel="apple-touch-icon" href="/lib/Logo/J-H LOGO-BLUE.png" />
+        </head>
         <body className="font-sans bg-background text-foreground">
           <ToasterProvider>
             {children}
@@ -42,7 +62,13 @@ export default function RootLayout({
 
   return (
     <html lang="en" suppressHydrationWarning className="antialiased">
-      <body className="font-sans bg-background text-foreground">
+      <head>
+        <link rel="icon" type="image/png" sizes="32x32" href="/lib/Logo/J-H LOGO-BLUE.png" />
+        <link rel="icon" type="image/png" sizes="16x16" href="/lib/Logo/J-H LOGO-BLUE.png" />
+        <link rel="shortcut icon" href="/lib/Logo/J-H LOGO-BLUE.png" />
+        <link rel="apple-touch-icon" href="/lib/Logo/J-H LOGO-BLUE.png" />
+      </head>
+      <body className={inter.className}>
         <ToasterProvider>
           <DashboardLayout>
             {children}

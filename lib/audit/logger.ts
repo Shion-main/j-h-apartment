@@ -57,7 +57,7 @@ export async function logTenantMoveIn(
   await logAuditEvent(
     supabase,
     userId,
-    'Tenant Move-In',
+    'TENANT_MOVE_IN',
     'tenants',
     tenantId,
     null,
@@ -146,8 +146,8 @@ export async function logBillModification(
  */
 export function getPaymentAction(paymentStatus: string): string {
   return paymentStatus === 'fully_paid'
-    ? 'Completed Full Payment'
-    : 'Recorded Partial Payment';
+    ? 'PAYMENT_COMPLETED'
+    : 'PAYMENT_PARTIAL';
 }
 
 /**

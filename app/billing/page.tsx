@@ -366,7 +366,7 @@ export default function BillingPage() {
   // Search and filters
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
-  const [branchFilter, setBranchFilter] = useState('');
+  const [branchFilter, setBranchFilter] = useState('all');
   const [billStatusFilter, setBillStatusFilter] = useState('');
   
   // Dialogs and forms
@@ -561,7 +561,6 @@ export default function BillingPage() {
   };
 
   const handleGenerateBill = async (tenant?: TenantWithBilling) => {
-    console.log('Generate Bill button clicked', tenant); // DEBUG
     if (tenant) {
       setSelectedTenant(tenant);
       setFormData({
@@ -571,12 +570,17 @@ export default function BillingPage() {
         extra_fee: null,
         extra_fee_description: null
       });
+      setIsSubmitting(false); // Reset submitting state when opening dialog
     }
     setIsGenerateDialogOpen(true);
   };
 
   const handleSubmitBill = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Prevent double submission
+    if (isSubmitting) return;
+    
     setIsSubmitting(true);
 
     try {
@@ -596,6 +600,7 @@ export default function BillingPage() {
           title: 'Invalid Input',
           message: 'Please check the highlighted fields and try again.'
         });
+        setIsSubmitting(false);
         return;
       }
 
@@ -608,10 +613,12 @@ export default function BillingPage() {
             title: 'Invalid Reading',
             message: `The new reading (${formData.present_electricity_reading} kWh) must be higher than the previous reading (${previousReading} kWh)`
           });
+          setIsSubmitting(false);
           return;
         }
       }
 
+      // Generate bill
       const response = await fetch('/api/bills', {
         method: 'POST',
         headers: {
@@ -623,14 +630,7 @@ export default function BillingPage() {
       const result = await response.json();
 
       if (result.success) {
-        addToast({
-          type: 'success',
-          title: 'Bill Generated',
-          message: 'The new bill has been created and an email has been sent to the tenant.'
-        });
-
-        // Close modal and reset form immediately after successful bill generation
-        setIsGenerateDialogOpen(false);
+        // Reset form state
         setFormData({
           tenant_id: '',
           present_electricity_reading: '',
@@ -639,10 +639,18 @@ export default function BillingPage() {
           extra_fee_description: null
         });
         setSelectedTenant(null);
+        
+        // Close dialog and show success message
+        setIsGenerateDialogOpen(false);
+        addToast({
+          type: 'success',
+          title: 'Bill Generated',
+          message: 'The new bill has been created and an email has been sent to the tenant.'
+        });
 
-        // Handle post-generation operations in a separate try-catch to avoid affecting the main flow
+        // Handle post-generation operations in background
         try {
-          // Log the event
+          // Log audit event
           const { data: { user } } = await supabase.auth.getUser();
           if (user && result.data) {
             await logAuditEvent(
@@ -659,27 +667,47 @@ export default function BillingPage() {
               }
             );
           }
-        } catch (auditError) {
-          console.error('Audit logging failed:', auditError);
-          // Continue with other operations
-        }
 
-        try {
-          // Invalidate cache and refresh data
+          // Invalidate cache
           invalidateCache('bills');
           invalidateCache('tenants');
+          invalidateCache('rooms');
+          invalidateCache('available-rooms');
           
-          await Promise.all([
-            fetchActiveBills(),
-            fetchTenantsWithBilling()
-          ]);
-        } catch (refreshError) {
-          console.error('Data refresh error:', refreshError);
-          // As a fallback, just show a message asking user to refresh
+          // Refresh data with cache busting
+          const timestamp = Date.now();
+          
+          // Set loading states for data refresh
+          setIsLoadingBills(true);
+          setIsLoadingTenants(true);
+
+          try {
+            // First fetch active bills
+            const billsResponse = await fetch(`/api/bills/active?_cache_bust=${timestamp}`);
+            const billsResult = await billsResponse.json();
+            if (billsResult.success) {
+              setBills(billsResult.data || []);
+            }
+
+            // Then fetch and process tenants
+            const tenantsResponse = await fetch(`/api/tenants?active=true&_cache_bust=${timestamp}`);
+            const tenantsResult = await tenantsResponse.json();
+            if (tenantsResult.success) {
+              const tenantsWithBilling = await processTenantsWithBilling(tenantsResult.data || []);
+              setTenants(tenantsWithBilling);
+            }
+          } finally {
+            // Always reset loading states
+            setIsLoadingBills(false);
+            setIsLoadingTenants(false);
+          }
+        } catch (error) {
+          console.error('Post-generation operations error:', error);
+          // Show a warning toast if data refresh fails
           addToast({
-            type: 'info',
-            title: 'Bill Generated',
-            message: 'Bill was created successfully. Please refresh the page to see the updated data.'
+            type: 'warning',
+            title: 'Data Refresh Warning',
+            message: 'Bill was generated but there was an issue refreshing the display. Please refresh the page.'
           });
         }
       } else {
@@ -688,7 +716,6 @@ export default function BillingPage() {
           title: 'Error',
           message: result.error || 'Failed to generate bill'
         });
-        setIsGenerateDialogOpen(false); // Close dialog on error
       }
     } catch (error) {
       console.error('Error generating bill:', error);
@@ -697,7 +724,6 @@ export default function BillingPage() {
         title: 'Unable to Process',
         message: 'There was a problem processing your request. Please try again.'
       });
-      setIsGenerateDialogOpen(false); // Close dialog on error
     } finally {
       setIsSubmitting(false);
     }

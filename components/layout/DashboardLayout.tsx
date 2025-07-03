@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo, createContext, useContext, memo } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { getSupabaseClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
@@ -14,169 +14,21 @@ import {
 } from 'lucide-react';
 import type { User as SupabaseUser } from '@supabase/supabase-js';
 
-// Context for page title management
-interface PageTitleContextType {
-  title: string;
-  subtitle: string;
-  setPageTitle: (title: string, subtitle?: string) => void;
-}
-
-const PageTitleContext = createContext<PageTitleContextType>({
-  title: '',
-  subtitle: '',
-  setPageTitle: () => {},
-});
-
-export const usePageTitle = () => useContext(PageTitleContext);
-
 interface DashboardLayoutProps {
   children: React.ReactNode;
 }
 
-// Memoized user menu component to prevent unnecessary re-renders
-const UserMenu = memo(({ userProfile, onSignOut }: { userProfile: any; onSignOut: () => void }) => (
-  <div className="flex items-center space-x-4">
-    <div className="flex items-center space-x-2">
-      <div className="bg-blue-600 text-white p-2 rounded-full">
-        <User className="h-4 w-4" />
-      </div>
-      <div className="hidden md:block">
-        <p className="text-sm font-medium text-gray-900">
-          {userProfile?.username || userProfile?.email || 'User'}
-        </p>
-        <p className="text-xs text-gray-500">
-          {userProfile?.user_roles?.[0]?.roles?.role_name || 'Staff'}
-        </p>
-      </div>
-    </div>
-    <Button
-      onClick={onSignOut}
-      variant="outline"
-      size="sm"
-      className="text-gray-600 border-gray-200 hover:bg-gray-50"
-    >
-      <LogOut className="h-4 w-4 mr-2" />
-      Sign Out
-    </Button>
-  </div>
-));
-
-UserMenu.displayName = 'UserMenu';
-
-// Memoized header component to prevent unnecessary re-renders
-const DashboardHeader = memo(({ 
-  title, 
-  subtitle, 
-  userProfile, 
-  onSignOut, 
-  onMenuToggle 
-}: {
-  title: string;
-  subtitle: string;
-  userProfile: any;
-  onSignOut: () => void;
-  onMenuToggle: () => void;
-}) => (
-  <div className="sticky top-0 z-20 px-4 py-3 bg-gray-50">
-    <div className="floating-header px-5 py-3 flex items-center justify-between animate-fadeIn">
-      <div className="flex items-center min-w-0 flex-1">
-        <Button
-          variant="ghost"
-          size="sm"
-          className="lg:hidden rounded-lg hover:bg-gray-100 mr-3 flex-shrink-0"
-          onClick={onMenuToggle}
-        >
-          <Menu className="h-5 w-5" />
-        </Button>
-        
-        <div className="min-w-0 flex-1">
-          <h1 className="text-xl font-bold text-gray-900 truncate">{title}</h1>
-          {subtitle && (
-            <p className="text-sm text-gray-600 truncate">{subtitle}</p>
-          )}
-        </div>
-      </div>
-      
-      <UserMenu userProfile={userProfile} onSignOut={onSignOut} />
-    </div>
-  </div>
-));
-
-DashboardHeader.displayName = 'DashboardHeader';
-
-// Memoized mobile sidebar to prevent unnecessary re-renders
-const MobileSidebar = memo(({ 
-  isOpen, 
-  onClose, 
-  isAuthenticated 
-}: {
-  isOpen: boolean;
-  onClose: () => void;
-  isAuthenticated: boolean;
-}) => (
-  <>
-    {isOpen && (
-      <div 
-        className="lg:hidden fixed inset-0 z-40 bg-black bg-opacity-50 backdrop-blur-sm"
-        onClick={onClose}
-      />
-    )}
-    
-    <aside className={`lg:hidden fixed inset-y-0 left-0 z-50 w-72 transform transition-transform duration-300 ease-in-out ${
-      isOpen ? 'translate-x-0' : '-translate-x-full'
-    }`} style={{ height: '100vh', position: 'fixed' }}>
-      <div className="floating-sidebar flex flex-col h-full m-3 overflow-hidden">
-        <div className="flex items-center justify-between p-4 border-b border-gray-100/50">
-          <h1 className="text-xl font-bold text-blue-700">J&H Management</h1>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onClose}
-            className="rounded-lg hover:bg-gray-100"
-          >
-            <X className="h-5 w-5" />
-          </Button>
-        </div>
-        <div className="overflow-y-auto" style={{ maxHeight: 'calc(100vh - 70px)' }}>
-          <Sidebar isAuthenticated={isAuthenticated} />
-        </div>
-      </div>
-    </aside>
-  </>
-));
-
-MobileSidebar.displayName = 'MobileSidebar';
-
-// Memoized loading component
-const LoadingSpinner = memo(() => (
-  <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50">
-    <div className="floating-card p-8 flex flex-col items-center animate-pulse">
-      <Loader2 className="h-16 w-16 animate-spin text-blue-600" />
-      <p className="mt-4 text-blue-600 font-medium">Loading J&H Management System</p>
-    </div>
-  </div>
-));
-
-LoadingSpinner.displayName = 'LoadingSpinner';
-
 export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const router = useRouter();
   const pathname = usePathname();
-  
-  // Optimized state management
   const [userProfile, setUserProfile] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   
-  // Page title state
-  const [title, setTitle] = useState('');
-  const [subtitle, setSubtitle] = useState('');
-  
   // Use the optimized singleton Supabase client
   const supabase = useMemo(() => getSupabaseClient(), []);
 
-  // Memoized fetch user profile function
   const fetchUserProfile = useCallback(async (user: SupabaseUser) => {
     try {
       const { data: profile, error } = await supabase
@@ -203,26 +55,6 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     }
   }, [supabase]);
 
-  // Memoized sign out handler
-  const handleSignOut = useCallback(async () => {
-    try {
-      await supabase.auth.signOut();
-    } catch (error) {
-      console.error('Sign out error:', error);
-    }
-  }, [supabase]);
-
-  // Memoized sidebar toggle handler
-  const handleSidebarToggle = useCallback(() => {
-    setSidebarOpen(prev => !prev);
-  }, []);
-
-  // Memoized close sidebar handler
-  const handleCloseSidebar = useCallback(() => {
-    setSidebarOpen(false);
-  }, []);
-
-  // Optimized authentication effect
   useEffect(() => {
     let mounted = true;
     
@@ -280,57 +112,97 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     };
   }, [supabase, router, fetchUserProfile]);
 
-  // Create page title context value with memoization
-  const pageTitleContextValue = useMemo(() => ({
-    title,
-    subtitle,
-    setPageTitle: (newTitle: string, newSubtitle: string = '') => {
-      setTitle(newTitle);
-      setSubtitle(newSubtitle);
+  const handleSignOut = useCallback(async () => {
+    try {
+      await supabase.auth.signOut();
+    } catch (error) {
+      console.error('Sign out error:', error);
     }
-  }), [title, subtitle]);
+  }, [supabase]);
 
-  // Early returns for loading and unauthenticated states
   if (isLoading) {
-    return <LoadingSpinner />;
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <Loader2 className="h-16 w-16 animate-spin text-blue-600" />
+      </div>
+    );
   }
 
   if (!isAuthenticated || !userProfile) {
     return null; 
   }
 
+  const userRole = userProfile?.user_roles?.[0]?.roles?.role_name || 'Staff';
+
   return (
-    <PageTitleContext.Provider value={pageTitleContextValue}>
-      <div className="min-h-screen bg-gray-50">
-        {/* Optimized Sidebar - Only render once */}
-        <Sidebar isAuthenticated={isAuthenticated} />
-        
-        {/* Mobile sidebar with memoization */}
-        <MobileSidebar 
-          isOpen={sidebarOpen}
-          onClose={handleCloseSidebar}
-          isAuthenticated={isAuthenticated}
+    <div className="min-h-screen bg-gray-50 flex">
+      {/* Optimized Sidebar - Only render once */}
+      <Sidebar isAuthenticated={isAuthenticated} />
+      
+      {/* Mobile sidebar overlay */}
+      {sidebarOpen && (
+        <div 
+          className="lg:hidden fixed inset-0 z-40 bg-black bg-opacity-50"
+          onClick={() => setSidebarOpen(false)}
         />
-        
-        {/* Main content */}
-        <div className="lg:ml-72 flex flex-col h-screen">
-          {/* Optimized header */}
-          <DashboardHeader
-            title={title}
-            subtitle={subtitle}
-            userProfile={userProfile}
-            onSignOut={handleSignOut}
-            onMenuToggle={handleSidebarToggle}
-          />
-          
-          {/* Main content area with performance optimization */}
-          <main className="flex-1 p-4 lg:p-6 overflow-y-auto">
-            <div className="max-w-7xl mx-auto">
-              {children}
-            </div>
-          </main>
+      )}
+      
+      {/* Mobile sidebar */}
+      <div className={`lg:hidden fixed inset-y-0 left-0 z-50 w-72 bg-white transform transition-transform duration-300 ease-in-out ${
+        sidebarOpen ? 'translate-x-0' : '-translate-x-full'
+      }`}>
+        <div className="flex items-center justify-between p-4 border-b">
+          <h1 className="text-xl font-bold">J&H Management</h1>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setSidebarOpen(false)}
+          >
+            <X className="h-5 w-5" />
+          </Button>
+        </div>
+        <div className="p-4">
+          <Sidebar isAuthenticated={isAuthenticated} />
         </div>
       </div>
-    </PageTitleContext.Provider>
+
+      {/* Main content */}
+      <div className="flex-1 lg:pl-72">
+        {/* Top bar */}
+        <div className="bg-white shadow-sm border-b border-gray-200 px-4 py-3 flex items-center justify-between lg:justify-end">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="lg:hidden"
+            onClick={() => setSidebarOpen(true)}
+          >
+            <Menu className="h-5 w-5" />
+          </Button>
+          
+          <div className="flex items-center space-x-4">
+            <div className="text-right hidden sm:block">
+              <div className="text-sm font-medium text-gray-900">{userProfile.full_name || userProfile.email}</div>
+              <div className="text-xs text-gray-500">{userRole}</div>
+            </div>
+            <div className="flex items-center space-x-2">
+              <User className="h-5 w-5 text-gray-400" />
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleSignOut}
+                className="text-gray-600 hover:text-gray-900"
+              >
+                <LogOut className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        </div>
+
+        {/* Page content */}
+        <main className="p-4 sm:p-6 lg:p-8">
+          {children}
+        </main>
+      </div>
+    </div>
   );
-}
+} 

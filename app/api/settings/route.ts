@@ -115,15 +115,14 @@ export async function POST(request: NextRequest) {
 
     if (error) throw error;
 
-    // --- START: New logic to update all branches ---
+    // --- START: Updated branch rate synchronization logic ---
     const rateUpdatePayload: { [key: string]: any } = {};
+    
+    // Process each setting update
     updates.forEach((update: { key: string, value: string }) => {
-      if (update.key === 'default_monthly_rent_rate') {
-        const rate = parseFloat(update.value);
-        if (!isNaN(rate) && rate >= 0) {
-          rateUpdatePayload.monthly_rent_rate = rate;
-        }
-      } else if (update.key === 'default_water_rate') {
+      // Only sync water and electricity rates with branches
+      // Monthly rent rate is NOT synced - it's only used as default for new branches
+      if (update.key === 'default_water_rate') {
         const rate = parseFloat(update.value);
         if (!isNaN(rate) && rate >= 0) {
           rateUpdatePayload.water_rate = rate;
@@ -136,38 +135,57 @@ export async function POST(request: NextRequest) {
       }
     });
 
+    // Only update branches if we have utility rates to update
     if (Object.keys(rateUpdatePayload).length > 0) {
+      // First, get all branches for audit logging
+      const { data: branchesBefore } = await supabase
+        .from('branches')
+        .select('id, name, water_rate, electricity_rate');
+
+      // Update all branches with new rates
       const { error: branchUpdateError } = await supabase
         .from('branches')
-        .update(rateUpdatePayload); // This updates all rows
+        .update(rateUpdatePayload)
+        .not('id', 'is', null);
 
       if (branchUpdateError) {
-        // Log the error but don't fail the entire operation
-        console.error('Failed to cascade rate updates to branches:', branchUpdateError);
-      } else {
-        await logAuditEvent(
-          supabase,
-          user.id,
-          'BRANCH_RATES_CASCADE_UPDATE',
-          'branches',
-          'all',
-          null,
-          rateUpdatePayload
-        );
+        console.error('Failed to update branch rates:', branchUpdateError);
+        // Continue execution but notify in response
+        return NextResponse.json({
+          success: true,
+          data: updatedSettings,
+          warning: 'Settings updated but failed to sync rates to branches'
+        });
+      }
+
+      // Log the branch rate updates
+      if (branchesBefore) {
+        for (const branch of branchesBefore) {
+          await logAuditEvent(
+            supabase,
+            user.id,
+            'BRANCH_RATES_UPDATED',
+            'branches',
+            branch.id,
+            {
+              water_rate: branch.water_rate,
+              electricity_rate: branch.electricity_rate
+            },
+            rateUpdatePayload
+          );
+        }
       }
     }
-    // --- END: New logic ---
+    // --- END: Updated branch rate synchronization logic ---
 
-    // Log each setting change
+    // Log each setting change - use logSettingsChange instead of direct logAuditEvent
     for (const { key, value } of updates) {
-      await logAuditEvent(
+      await logSettingsChange(
         supabase,
         user.id,
-        'SETTINGS_CHANGED',
-        'system_settings',
-        key, // Use the key as the target_id for settings
-        { value: oldSettings[key] },
-        { value }
+        key,
+        oldSettings[key],
+        value
       );
     }
 

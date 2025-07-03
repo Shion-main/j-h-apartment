@@ -5,6 +5,48 @@ import { NextRequest, NextResponse } from 'next/server';
 // Force dynamic rendering for this route
 export const dynamic = 'force-dynamic';
 
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const { month, reportType } = body;
+    
+    if (!month) {
+      return NextResponse.json({ 
+        error: 'Month parameter is required (e.g., "2025-03")' 
+      }, { status: 400 });
+    }
+
+    // Parse month string (e.g., "2025-03") to get month and year
+    const [year, monthNum] = month.split('-').map(Number);
+    
+    if (!year || !monthNum || monthNum < 1 || monthNum > 12) {
+      return NextResponse.json({ 
+        error: 'Invalid month format. Use YYYY-MM format (e.g., "2025-03")' 
+      }, { status: 400 });
+    }
+
+    // Create a new URL with query parameters for the GET handler
+    const url = new URL(request.url);
+    url.searchParams.set('month', monthNum.toString());
+    url.searchParams.set('year', year.toString());
+    
+    // Create a new request with GET method and the same URL
+    const getRequest = new NextRequest(url, {
+      method: 'GET',
+      headers: request.headers
+    });
+    
+    // Call the existing GET handler
+    return await GET(getRequest);
+  } catch (error) {
+    console.error('POST handler error:', error);
+    return NextResponse.json({
+      error: 'Internal server error',
+      success: false
+    }, { status: 500 });
+  }
+}
+
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
   const reportMonth = searchParams.get('month'); // e.g., "3" for March
@@ -312,8 +354,15 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    return NextResponse.json({ data: report });
+    return NextResponse.json({ 
+      success: true, 
+      data: report 
+    });
   } catch (error) {
-    return NextResponse.json({ error: 'Failed to generate consolidated JSON report' }, { status: 500 });
+    console.error('Consolidated JSON report error:', error);
+    return NextResponse.json({ 
+      error: 'Failed to generate consolidated JSON report',
+      success: false 
+    }, { status: 500 });
   }
 }

@@ -14,7 +14,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     }
 
     const body = await request.json();
-    const { full_name, email_address, phone_number, room_id } = body;
+    const { full_name, email_address, phone_number } = body;
 
     // 1. Get original tenant data for logging and comparison
     const { data: originalTenant, error: fetchError } = await supabase
@@ -25,37 +25,22 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
       
     if (fetchError || !originalTenant) throw new Error('Original tenant not found.');
 
-    const isRelocating = room_id !== originalTenant.room_id;
-    let newBranchId = originalTenant.branch_id;
-
-    // 2. If relocating, handle room occupancy changes
-    if (isRelocating) {
-      // Mark old room as not occupied
-      await supabase.from('rooms').update({ is_occupied: false }).eq('id', originalTenant.room_id);
-      
-      // Mark new room as occupied and get its branch_id
-      const { data: newRoom, error: newRoomError } = await supabase
-        .from('rooms')
-        .update({ is_occupied: true })
-        .eq('id', room_id)
-        .select('branch_id')
-        .single();
-        
-      if (newRoomError || !newRoom) throw new Error('Failed to secure new room for relocation.');
-      newBranchId = newRoom.branch_id;
-    }
-
-    // 3. Update the tenant record
+    // 2. Update only personal information (no room changes allowed)
     const { data: updatedTenant, error: updateError } = await supabase
       .from('tenants')
-      .update({ full_name, email_address, phone_number, room_id, branch_id: newBranchId })
+      .update({ 
+        full_name, 
+        email_address, 
+        phone_number
+        // Note: room_id and branch_id remain unchanged
+      })
       .eq('id', tenantId)
       .select()
       .single();
 
     if (updateError) throw updateError;
 
-    // 4. Log the audit event
+    // 3. Log the audit event (personal information update only)
     await logAuditEvent(
       supabase,
       user.id,
@@ -66,14 +51,12 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
         full_name: originalTenant.full_name,
         email_address: originalTenant.email_address,
         phone_number: originalTenant.phone_number,
-        room_id: originalTenant.room_id,
       },
       {
         full_name: updatedTenant.full_name,
         email_address: updatedTenant.email_address,
         phone_number: updatedTenant.phone_number,
-        room_id: updatedTenant.room_id,
-        relocated: isRelocating
+        update_type: 'personal_information'
       }
     );
 

@@ -44,14 +44,11 @@ export class EmailService {
   private static generateWelcomeEmail(data: any): { subject: string; html: string } {
     const subject = 'Welcome to J&H Apartment';
     
-    // Ensure we have a valid name to use in the greeting
-    const displayName = data.full_name && data.full_name.trim() ? data.full_name : 'New Tenant';
-    
     const html = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
         <h2 style="color: #2563eb; margin-bottom: 20px;">Welcome to J&H Apartment!</h2>
         
-        <p>Dear ${displayName},</p>
+        <p>Dear ${data.full_name},</p>
         
         <p>Thank you for choosing J&H Apartment. We're excited to have you as part of our community!</p>
         
@@ -130,7 +127,7 @@ export class EmailService {
       // Send email
       const info = await transporter.sendMail({
         from: `"${process.env.FROM_NAME || 'J&H Management'}" <${process.env.FROM_EMAIL || process.env.SMTP_USERNAME}>`,
-        to: `"${data.full_name}" <${data.email}>`,
+        to: data.email,
         subject: emailContent.subject,
         html: emailContent.html
       });
@@ -175,14 +172,6 @@ export class EmailService {
   private static generateBillEmail(data: any): { subject: string; html: string } {
     const subject = `New Bill Generated - ${new Date(data.billing_period_start).toLocaleDateString()} to ${new Date(data.billing_period_end).toLocaleDateString()}`;
     
-    // Debug logging to check what data is being passed
-    console.log('Email data received:', {
-      full_name: data.full_name,
-      email: data.email,
-      room_number: data.room_number,
-      branch_name: data.branch_name
-    });
-    
     // Helper function to safely format numbers
     const formatAmount = (amount: number | undefined | null): string => {
       return typeof amount === 'number' ? amount.toFixed(2) : '0.00';
@@ -193,14 +182,11 @@ export class EmailService {
       ? data.present_electricity_reading - data.previous_electricity_reading
       : 0;
     
-    // Ensure we have a valid name to use in the greeting
-    const displayName = data.full_name && data.full_name.trim() ? data.full_name : 'Valued Tenant';
-    
     const html = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
         <h2 style="color: #f59e0b; margin-bottom: 20px;">New Bill Generated</h2>
         
-        <p>Dear ${displayName},</p>
+        <p>Dear ${data.full_name},</p>
         
         <p>Your bill for ${new Date(data.billing_period_start).toLocaleDateString()} to ${new Date(data.billing_period_end).toLocaleDateString()} has been generated.</p>
         
@@ -319,14 +305,10 @@ export class EmailService {
       // Generate email content
       const emailContent = this.generateBillEmail(data);
 
-      // Debug logging for email sending
-      console.log('Sending email to:', `"${data.full_name}" <${data.email}>`);
-      console.log('Email subject:', emailContent.subject);
-
       // Send email with QR code attachment
       const info = await transporter.sendMail({
         from: `"${process.env.FROM_NAME || 'J&H Management'}" <${process.env.FROM_EMAIL || process.env.SMTP_USERNAME}>`,
-        to: `"${data.full_name}" <${data.email}>`,
+        to: data.email,
         subject: emailContent.subject,
         html: emailContent.html,
         attachments: [
@@ -361,14 +343,11 @@ export class EmailService {
   private static generatePartialPaymentEmail(data: any): { subject: string; html: string } {
     const subject = `Partial Payment Confirmation - ${new Date(data.payment_date).toLocaleDateString()}`;
     
-    // Ensure we have a valid name to use in the greeting
-    const displayName = data.full_name && data.full_name.trim() ? data.full_name : 'Valued Tenant';
-    
     const html = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
         <h2 style="color: #f59e0b; margin-bottom: 20px;">Partial Payment Confirmation</h2>
         
-        <p>Dear ${displayName},</p>
+        <p>Dear ${data.full_name},</p>
         
         <p>Thank you for your partial payment. Your payment has been recorded successfully.</p>
         
@@ -418,14 +397,11 @@ export class EmailService {
       return typeof amount === 'number' ? amount.toFixed(2) : '0.00';
     };
     
-    // Ensure we have a valid name to use in the greeting
-    const displayName = data.full_name && data.full_name.trim() ? data.full_name : 'Valued Tenant';
-    
     const html = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
         <h2 style="color: #059669; margin-bottom: 20px;">✅ Payment Complete</h2>
         
-        <p>Dear ${displayName},</p>
+        <p>Dear ${data.full_name},</p>
         
         <p>Thank you! Your bill has been fully paid. Here's your payment receipt:</p>
         
@@ -468,13 +444,10 @@ export class EmailService {
   private static generateBillEditedEmail(data: any): { subject: string; html: string } {
     const subject = `Updated Bill - ${new Date(data.billing_period_start).toLocaleDateString()} to ${new Date(data.billing_period_end).toLocaleDateString()}`;
     
-    // Ensure we have a valid name to use in the greeting
-    const displayName = data.full_name && data.full_name.trim() ? data.full_name : 'Valued Tenant';
-    
     const html = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
         <h2 style="color: #f59e0b; margin-bottom: 20px;">Bill Updated</h2>
-        <p>Dear ${displayName},</p>
+        <p>Dear ${data.full_name},</p>
         <p>Your bill for the period ${new Date(data.billing_period_start).toLocaleDateString()} to ${new Date(data.billing_period_end).toLocaleDateString()} has been updated. Please review the changes below:</p>
         <div style="background-color: #fef3c7; border: 2px solid #f59e0b; padding: 15px; border-radius: 8px; margin: 20px 0;">
           <h4 style="margin-top: 0; color: #92400e;">⚠️ Bill Update Notice</h4>
@@ -653,7 +626,7 @@ export class EmailService {
       const emailContent = this.generateFinalBillEditedEmail(data);
       const info = await transporter.sendMail({
         from: `"${process.env.FROM_NAME || 'J&H Management'}" <${process.env.FROM_EMAIL || process.env.SMTP_USERNAME}>`,
-        to: `"${data.full_name}" <${data.email}>`,
+        to: data.email,
         subject: emailContent.subject,
         html: emailContent.html
       });
@@ -821,12 +794,6 @@ export class EmailService {
               <td style="padding: 10px; font-weight: bold; color: #059669;">Security Deposit Available</td>
               <td style="padding: 10px; text-align: right; font-weight: bold; color: #059669;">₱${data.security_deposit_available.toLocaleString()}</td>
             </tr>
-            ${data.security_deposit_forfeited && data.security_deposit_forfeited > 0 ? `
-            <tr style="border-bottom: 1px solid #e5e7eb; background-color: #fef2f2;">
-              <td style="padding: 10px; font-weight: bold; color: #dc2626;">Security Deposit (Forfeited)</td>
-              <td style="padding: 10px; text-align: right; font-weight: bold; color: #dc2626;">₱${data.security_deposit_forfeited.toLocaleString()}</td>
-            </tr>
-            ` : ''}
             <tr style="border-top: 2px solid #10b981; background-color: #d1fae5;">
               <td style="padding: 15px; font-weight: bold; font-size: 18px; color: #059669;">REFUND AMOUNT</td>
               <td style="padding: 15px; text-align: right; font-weight: bold; font-size: 18px; color: #059669;">₱${data.refund_amount.toLocaleString()}</td>
@@ -887,7 +854,7 @@ export class EmailService {
 
       const info = await transporter.sendMail({
         from: `"${process.env.FROM_NAME || 'J&H Management'}" <${process.env.FROM_EMAIL || process.env.SMTP_USERNAME}>`,
-        to: `"${data.full_name}" <${data.email}>`,
+        to: data.email,
         subject: emailContent.subject,
         html: emailContent.html
       });
@@ -924,7 +891,7 @@ export class EmailService {
 
       const info = await transporter.sendMail({
         from: `"${process.env.FROM_NAME || 'J&H Management'}" <${process.env.FROM_EMAIL || process.env.SMTP_USERNAME}>`,
-        to: `"${data.full_name}" <${data.email}>`,
+        to: data.email,
         subject: emailContent.subject,
         html: emailContent.html
       });
@@ -967,7 +934,7 @@ export class EmailService {
 
       const info = await transporter.sendMail({
         from: `"${process.env.FROM_NAME || 'J&H Management'}" <${process.env.FROM_EMAIL || process.env.SMTP_USERNAME}>`,
-        to: `"${data.full_name}" <${data.email}>`,
+        to: data.email,
         subject: emailContent.subject,
         html: emailContent.html
       });
@@ -1010,7 +977,7 @@ export class EmailService {
 
       const info = await transporter.sendMail({
         from: `"${process.env.FROM_NAME || 'J&H Management'}" <${process.env.FROM_EMAIL || process.env.SMTP_USERNAME}>`,
-        to: `"${data.full_name}" <${data.email}>`,
+        to: data.email,
         subject: emailContent.subject,
         html: emailContent.html
       });
@@ -1040,7 +1007,6 @@ export class EmailService {
     total_charges: number;
     advance_payment_available: number;
     security_deposit_available: number;
-    security_deposit_forfeited?: number;
     refund_amount: number;
   }): Promise<{ success: boolean; messageId?: string; error?: string }> {
     try {
@@ -1058,7 +1024,7 @@ export class EmailService {
       // Send email
       const info = await transporter.sendMail({
         from: `"${process.env.FROM_NAME || 'J&H Management'}" <${process.env.FROM_EMAIL || process.env.SMTP_USERNAME}>`,
-        to: `"${data.full_name}" <${data.email}>`,
+        to: data.email,
         subject: emailContent.subject,
         html: emailContent.html
       });
@@ -1439,7 +1405,7 @@ export class EmailService {
       // Send email
       const info = await transporter.sendMail({
         from: `"${process.env.FROM_NAME || 'J&H Management'}" <${process.env.FROM_EMAIL || process.env.SMTP_USERNAME}>`,
-        to: `"${data.full_name}" <${data.email}>`,
+        to: data.email,
         subject: emailContent.subject,
         html: emailContent.html
       });
@@ -1530,7 +1496,7 @@ export class EmailService {
       const emailContent = this.generatePenaltyEmail(data);
       const info = await transporter.sendMail({
         from: `"${process.env.FROM_NAME || 'J&H Management'}" <${process.env.FROM_EMAIL || process.env.SMTP_USERNAME}>`,
-        to: `"${data.full_name}" <${data.email}>`,
+        to: data.email,
         subject: emailContent.subject,
         html: emailContent.html
       });

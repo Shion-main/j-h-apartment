@@ -334,6 +334,10 @@ export const companyExpenseSchema = Joi.object({
     'date.base': 'Please enter a valid expense date',
     'any.required': 'Expense date is required'
   }),
+  branch_id: Joi.string().uuid().required().messages({
+    'string.guid': 'Please select a valid branch',
+    'any.required': 'Branch is required'
+  }),
   receipt_url: Joi.string().uri().optional().allow('').messages({
     'string.uri': 'Receipt URL must be a valid URL'
   }),

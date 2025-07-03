@@ -60,56 +60,126 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
   }
 }
 
-// DELETE handler for deleting a room
-export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
-  const roomId = params.id;
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
   try {
     const supabase = createRouteHandlerClient({ cookies });
-    const { data: { user } } = await supabase.auth.getUser();
+    const roomId = params.id;
 
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized', success: false }, { status: 401 });
+    // Get current user for audit logging
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) {
+      return NextResponse.json({
+        error: 'Unauthorized',
+        success: false
+      }, { status: 401 });
     }
-    
-    // Fetch current room data for audit log
-    const { data: roomToDelete, error: fetchError } = await supabase
+
+    // Get room data before deletion for audit logging
+    const { data: roomData } = await supabase
       .from('rooms')
       .select('*')
       .eq('id', roomId)
       .single();
 
-    if (fetchError || !roomToDelete) {
-      return NextResponse.json({ error: 'Room not found', success: false }, { status: 404 });
-    }
-    
-    if (roomToDelete.is_occupied) {
-        return NextResponse.json({ error: 'Cannot delete an occupied room.', success: false }, { status: 400 });
-    }
-
-    // Delete the room
-    const { error: deleteError } = await supabase
+    const { error } = await supabase
       .from('rooms')
       .delete()
       .eq('id', roomId);
 
-    if (deleteError) {
-      throw deleteError;
+    if (error) {
+      console.error('Error deleting room:', error);
+      return NextResponse.json({
+        error: 'Failed to delete room',
+        success: false
+      }, { status: 500 });
     }
 
-    // Log the audit event
+    // Log the room deletion
     await logAuditEvent(
       supabase,
       user.id,
       'ROOM_DELETED',
       'rooms',
       roomId,
-      { room_number: roomToDelete.room_number, branch_id: roomToDelete.branch_id, monthly_rent: roomToDelete.monthly_rent },
+      roomData,
       null
     );
 
-    return NextResponse.json({ success: true, message: 'Room deleted successfully' });
-  } catch (error: any) {
-    console.error(`Error deleting room ${roomId}:`, error);
-    return NextResponse.json({ error: error.message || 'Failed to delete room', success: false }, { status: 500 });
+    return NextResponse.json({
+      success: true
+    });
+  } catch (error) {
+    console.error('Error in DELETE /api/rooms/[id]:', error);
+    return NextResponse.json({
+      error: 'Internal server error',
+      success: false
+    }, { status: 500 });
+  }
+}
+
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const supabase = createRouteHandlerClient({ cookies });
+    const roomId = params.id;
+    const body = await request.json();
+
+    // Get current user for audit logging
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) {
+      return NextResponse.json({
+        error: 'Unauthorized',
+        success: false
+      }, { status: 401 });
+    }
+
+    // Get current room data for audit logging
+    const { data: currentRoom } = await supabase
+      .from('rooms')
+      .select('*')
+      .eq('id', roomId)
+      .single();
+
+    const { data: updatedRoom, error } = await supabase
+      .from('rooms')
+      .update(body)
+      .eq('id', roomId)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error updating room:', error);
+      return NextResponse.json({
+        error: 'Failed to update room',
+        success: false
+      }, { status: 500 });
+    }
+
+    // Log the room update
+    await logAuditEvent(
+      supabase,
+      user.id,
+      'ROOM_UPDATED',
+      'rooms',
+      roomId,
+      currentRoom,
+      updatedRoom
+    );
+
+    return NextResponse.json({
+      data: updatedRoom,
+      success: true
+    });
+  } catch (error) {
+    console.error('Error in PATCH /api/rooms/[id]:', error);
+    return NextResponse.json({
+      error: 'Internal server error',
+      success: false
+    }, { status: 500 });
   }
 } 

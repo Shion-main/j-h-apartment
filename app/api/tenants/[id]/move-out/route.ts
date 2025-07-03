@@ -344,7 +344,7 @@ export async function POST(
     // Send appropriate email based on final balance
     try {
       if (finalBalance < 0) {
-        // Send refund notice email
+        // Send refund notice email (Note: this email doesn't include forfeited_amount)
         await EmailService.sendRefundNoticeEmail({
           email: tenant.email_address,
           full_name: tenant.full_name,
@@ -359,7 +359,6 @@ export async function POST(
           total_charges: finalBillAmount,
           advance_payment_available: tenant.advance_payment,
           security_deposit_available: tenant.security_deposit,
-          security_deposit_forfeited: depositApplication.forfeitedAmount,
           refund_amount: Math.abs(finalBalance)
         });
       } else {

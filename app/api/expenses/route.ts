@@ -137,6 +137,7 @@ export async function POST(request: NextRequest) {
         amount: value.amount,
         category: value.category,
         expense_date: value.expense_date,
+        branch_id: value.branch_id, // Add this line
         receipt_url: value.receipt_url || null,
         notes: value.notes || null,
         created_by: user.id,
@@ -235,6 +236,7 @@ export async function PUT(request: NextRequest) {
         amount: value.amount,
         category: value.category,
         expense_date: value.expense_date,
+        branch_id: value.branch_id,
         receipt_url: value.receipt_url || null,
         notes: value.notes || null,
         updated_at: new Date().toISOString(),

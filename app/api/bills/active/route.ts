@@ -3,8 +3,9 @@ import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 import { calculatePenalty } from '@/lib/calculations/billing';
 
-// Force dynamic rendering for this route
+// Force dynamic rendering and disable caching for this route
 export const dynamic = 'force-dynamic';
+export const revalidate = 0;
 
 export async function GET(request: NextRequest) {
   try {
@@ -73,10 +74,19 @@ export async function GET(request: NextRequest) {
 
     if (error) {
       console.error('Error fetching active bills:', error);
-      return NextResponse.json({
-        error: 'Failed to fetch active bills',
-        success: false
-      }, { status: 500 });
+      return new NextResponse(
+        JSON.stringify({
+          error: 'Failed to fetch active bills',
+          success: false
+        }),
+        { 
+          status: 500,
+          headers: {
+            'Cache-Control': 'no-store, no-cache, must-revalidate',
+            'Content-Type': 'application/json',
+          }
+        }
+      );
     }
 
     // Enhance bills with penalty calculations for overdue bills
@@ -156,16 +166,33 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    return NextResponse.json({
-      data: filteredBills,
-      success: true
-    });
+    return new NextResponse(
+      JSON.stringify({
+        data: filteredBills,
+        success: true
+      }),
+      { 
+        headers: {
+          'Cache-Control': 'no-store, no-cache, must-revalidate',
+          'Content-Type': 'application/json',
+        }
+      }
+    );
 
   } catch (error) {
     console.error('API error:', error);
-    return NextResponse.json({
-      error: 'Internal server error',
-      success: false
-    }, { status: 500 });
+    return new NextResponse(
+      JSON.stringify({
+        error: 'Internal server error',
+        success: false
+      }),
+      { 
+        status: 500,
+        headers: {
+          'Cache-Control': 'no-store, no-cache, must-revalidate',
+          'Content-Type': 'application/json',
+        }
+      }
+    );
   }
 } 

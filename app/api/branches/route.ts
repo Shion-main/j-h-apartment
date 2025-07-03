@@ -7,10 +7,9 @@ import { logAuditEvent } from '@/lib/audit/logger';
 // Force dynamic rendering for this route
 export const dynamic = 'force-dynamic';
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     const supabase = createRouteHandlerClient({ cookies });
-    
     const { data: branches, error } = await supabase
       .from('branches')
       .select('*')
@@ -18,131 +17,99 @@ export async function GET() {
 
     if (error) {
       console.error('Error fetching branches:', error);
-      return NextResponse.json(
-        { error: 'Failed to fetch branches', success: false },
-        { status: 500 }
-      );
+      return NextResponse.json({
+        error: 'Failed to fetch branches',
+        success: false
+      }, { status: 500 });
     }
 
     return NextResponse.json({
       data: branches,
       success: true
     });
+
   } catch (error) {
-    console.error('Error in GET /api/branches:', error);
-    return NextResponse.json(
-      { error: 'Internal server error', success: false },
-      { status: 500 }
-    );
+    console.error('API error:', error);
+    return NextResponse.json({
+      error: 'Internal server error',
+      success: false
+    }, { status: 500 });
   }
 }
 
 export async function POST(request: NextRequest) {
   try {
     const supabase = createRouteHandlerClient({ cookies });
-    
+    const body = await request.json();
+
     // Get current user for audit logging
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (authError || !user) {
-      return NextResponse.json(
-        { error: 'Unauthorized', success: false },
-        { status: 401 }
-      );
+      return NextResponse.json({
+        error: 'Unauthorized',
+        success: false
+      }, { status: 401 });
     }
 
-    const body = await request.json();
-    
-    // Validate input
-    const { error: validationError, value: branchData } = branchSchema.validate(body);
-    if (validationError) {
-      return NextResponse.json(
-        { error: validationError.details[0].message, success: false },
-        { status: 400 }
-      );
-    }
+    // Get default rates from settings
+    const { data: settings } = await supabase
+      .from('system_settings')
+      .select('key, value')
+      .in('key', ['default_monthly_rent_rate', 'default_water_rate', 'default_electricity_rate']);
 
-    // Ensure numberOfRooms is present and valid
-    if (!branchData.numberOfRooms || branchData.numberOfRooms < 1) {
-      return NextResponse.json(
-        { error: 'Number of rooms is required and must be at least 1', success: false },
-        { status: 400 }
-      );
-    }
+    const defaultRates = settings?.reduce((acc: any, setting) => {
+      if (setting.key === 'default_monthly_rent_rate') acc.monthly_rent_rate = parseFloat(setting.value);
+      if (setting.key === 'default_water_rate') acc.water_rate = parseFloat(setting.value);
+      if (setting.key === 'default_electricity_rate') acc.electricity_rate = parseFloat(setting.value);
+      return acc;
+    }, {}) || {};
 
-    // Default room_number_prefix to empty string if not provided
-    const { numberOfRooms, room_number_prefix = '', ...branchInsertData } = branchData;
+    // Merge default rates with provided data
+    const branchData = {
+      name: body.name,
+      address: body.address,
+      monthly_rent_rate: body.monthly_rent_rate || defaultRates.monthly_rent_rate,
+      water_rate: body.water_rate || defaultRates.water_rate,
+      electricity_rate: body.electricity_rate || defaultRates.electricity_rate,
+      room_number_prefix: body.room_number_prefix
+    };
 
-    // Insert branch
-    const { data: branch, error: branchError } = await supabase
+    const { data: newBranch, error } = await supabase
       .from('branches')
-      .insert(branchInsertData)
+      .insert([branchData])
       .select()
       .single();
 
-    if (branchError) {
-      console.error('Error creating branch:', branchError);
-      return NextResponse.json(
-        { error: 'Failed to create branch', success: false },
-        { status: 500 }
-      );
+    if (error) {
+      console.error('Error creating branch:', error);
+      return NextResponse.json({
+        error: 'Failed to create branch',
+        success: false
+      }, { status: 500 });
     }
 
-    // Log audit event
+    // Log branch creation
     await logAuditEvent(
       supabase,
       user.id,
-      'Branch Created',
+      'BRANCH_CREATED',
       'branches',
-      branch.id,
-      undefined,
-      branchInsertData
+      newBranch.id,
+      null,
+      branchData
     );
-
-    // If numberOfRooms is specified, create rooms in bulk
-    if (numberOfRooms && numberOfRooms > 0) {
-      const roomsToInsert = [];
-      
-      for (let i = 1; i <= numberOfRooms; i++) {
-        roomsToInsert.push({
-          branch_id: branch.id,
-          room_number: `${room_number_prefix}${i.toString().padStart(2, '0')}`,
-          monthly_rent: branch.monthly_rent_rate,
-        });
-      }
-
-      const { error: roomsError } = await supabase
-        .from('rooms')
-        .insert(roomsToInsert);
-
-      if (roomsError) {
-        console.error('Error creating rooms:', roomsError);
-        // Don't fail the entire request if room creation fails
-        // The branch was created successfully
-      } else {
-        // Log audit event for bulk room creation
-        await logAuditEvent(
-          supabase,
-          user.id,
-          'Bulk Rooms Created',
-          'rooms',
-          branch.id,
-          undefined,
-          { branch_id: branch.id, rooms_created: numberOfRooms }
-        );
-      }
-    }
 
     return NextResponse.json({
-      data: branch,
-      success: true,
-      message: `Branch created successfully${numberOfRooms ? ` with ${numberOfRooms} rooms` : ''}`
+      data: newBranch,
+      success: true
     });
+
   } catch (error) {
-    console.error('Error in POST /api/branches:', error);
-    return NextResponse.json(
-      { error: 'Internal server error', success: false },
-      { status: 500 }
-    );
+    console.error('API error:', error);
+    return NextResponse.json({
+      error: 'Internal server error',
+      success: false
+    }, { status: 500 });
   }
 }
 
