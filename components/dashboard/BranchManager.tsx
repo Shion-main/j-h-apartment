@@ -47,6 +47,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { logAuditEvent } from '@/lib/audit/logger';
 import { usePageTitleEffect } from '@/lib/hooks/usePageTitleEffect';
+import { invalidateCache } from '@/lib/supabase/client';
 // import { motion, AnimatePresence } from 'framer-motion';
 
 // Schemas
@@ -719,7 +720,7 @@ export default function BranchManager() {
         title: 'Branch Created',
         message: `${newBranch.name} has been created with ${numberOfRooms} rooms.`
       });
-
+      invalidateCache('branches');
       await fetchData();
       setIsAddDialogOpen(false);
       resetBranch();
@@ -730,6 +731,11 @@ export default function BranchManager() {
         title: 'Unable to Create Branch',
         message: 'Please check your input and try again.',
       });
+    } finally {
+      // Ensure loading state is always reset
+      // This is needed because react-hook-form's isSubmitting may not always reset on error
+      // so we force a form reset here
+      resetBranch(undefined, { keepValues: true });
     }
   };
 
@@ -982,7 +988,7 @@ export default function BranchManager() {
                               // Proceed with deletion
                               const { error } = await supabase.from('branches').delete().eq('id', branch.id);
                               if (error) throw error;
-                              
+                              invalidateCache('branches');
                               addToast({ type: 'success', title: 'Branch Deleted', message: `${branch.name} has been deleted.` });
                               fetchData();
                             } catch (error: any) {

@@ -18,8 +18,12 @@ import {
   ArrowTrendingUpIcon,
   ArrowTrendingDownIcon,
   HomeIcon,
-  ClockIcon
+  ClockIcon,
+  PlusIcon
 } from '@heroicons/react/24/outline';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Label } from '@/components/ui/label';
+import { getSupabaseClient } from '@/lib/supabase/client';
 
 interface ConsolidatedReport {
   month: string;
@@ -106,6 +110,22 @@ export default function ReportsPage() {
   const [comprehensiveEmailAddress, setComprehensiveEmailAddress] = useState('');
   const [isSendingComprehensiveEmail, setIsSendingComprehensiveEmail] = useState(false);
   const [comprehensiveReportData, setComprehensiveReportData] = useState<any>(null);
+  
+  // Add expenses states (copied from dashboard)
+  const [expensesDialogOpen, setExpensesDialogOpen] = useState(false);
+  const [isAddingExpense, setIsAddingExpense] = useState(false);
+  const [expenseForm, setExpenseForm] = useState({
+    amount: '',
+    description: '',
+    category: '',
+    expense_date: (() => {
+      const today = new Date();
+      return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    })(),
+    branch_id: ''
+  });
+  const [branches, setBranches] = useState<any[]>([]);
+  const supabase = useMemo(() => getSupabaseClient(), []);
   
   const { toast } = useToast();
 
@@ -358,6 +378,46 @@ export default function ReportsPage() {
     }
   };
 
+  // Fetch branches for expense form
+  useEffect(() => {
+    const fetchBranches = async () => {
+      try {
+        // Use the helper for consistent client-side fetching
+        const data = await import('@/lib/supabase/client').then(mod => mod.getBranches());
+        setBranches(data || []);
+      } catch (error) {
+        setBranches([]);
+      }
+    };
+    fetchBranches();
+  }, []);
+
+  // Handle expense submission
+  const handleExpenseSubmit = async () => {
+    if (!expenseForm.amount || !expenseForm.description || !expenseForm.branch_id) {
+      toast({ title: 'Error', description: 'Please fill in all required fields', variant: 'destructive' });
+      return;
+    }
+    setIsAddingExpense(true);
+    try {
+      const response = await fetch('/api/expenses', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...expenseForm, amount: parseFloat(expenseForm.amount) })
+      });
+      const result = await response.json();
+      if (!response.ok || !result.success) throw new Error(result.error || 'Failed to add expense');
+      toast({ title: 'Success', description: 'Expense added successfully' });
+      setExpenseForm({ amount: '', description: '', category: '', expense_date: (() => { const today = new Date(); return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`; })(), branch_id: '' });
+      setExpensesDialogOpen(false);
+      fetchConsolidatedReport();
+    } catch (error) {
+      toast({ title: 'Error', description: error instanceof Error ? error.message : 'Failed to add expense', variant: 'destructive' });
+    } finally {
+      setIsAddingExpense(false);
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gray-50">
@@ -388,14 +448,6 @@ export default function ReportsPage() {
               >
                 <TableCellsIcon className="h-4 w-4" />
                 Monthly Report
-              </Button>
-              <Button
-                variant={reportType === 'yearly' ? 'default' : 'outline'}
-                onClick={() => setReportType('yearly')}
-                className="flex items-center gap-2 w-full sm:w-auto"
-              >
-                <ChartBarIcon className="h-4 w-4" />
-                Yearly Report
               </Button>
             </div>
 
@@ -468,6 +520,75 @@ export default function ReportsPage() {
                     </Button>
                     <Button onClick={sendReportEmail} disabled={isSendingEmail}>
                       {isSendingEmail ? 'Sending...' : 'Send'}
+                    </Button>
+                  </div>
+                </DialogContent>
+              </Dialog>
+
+              {/* Add Expense Button */}
+              <Dialog open={expensesDialogOpen} onOpenChange={setExpensesDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white">
+                    <PlusIcon className="h-4 w-4" />
+                    Add Expense
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Add Company Expense</DialogTitle>
+                  </DialogHeader>
+                  <div className="grid gap-4 py-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="grid gap-2">
+                        <Label htmlFor="amount">Amount (PHP)</Label>
+                        <Input id="amount" type="number" min="0" value={expenseForm.amount} onChange={e => setExpenseForm(prev => ({ ...prev, amount: e.target.value }))} placeholder="2000" />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label htmlFor="expense_date">Date</Label>
+                        <Input id="expense_date" type="date" value={expenseForm.expense_date} onChange={e => setExpenseForm(prev => ({ ...prev, expense_date: e.target.value }))} />
+                      </div>
+                    </div>
+                    <div className="grid gap-2">
+                      <Label htmlFor="description">Description</Label>
+                      <Input id="description" value={expenseForm.description} onChange={e => setExpenseForm(prev => ({ ...prev, description: e.target.value }))} placeholder="Expense description" />
+                    </div>
+                    <div className="grid gap-2">
+                      <Label htmlFor="category">Category</Label>
+                      <Select value={expenseForm.category} onValueChange={value => setExpenseForm(prev => ({ ...prev, category: value }))}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select category" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Office Supplies">Office Supplies</SelectItem>
+                          <SelectItem value="Utilities">Utilities</SelectItem>
+                          <SelectItem value="Maintenance">Maintenance</SelectItem>
+                          <SelectItem value="Marketing">Marketing</SelectItem>
+                          <SelectItem value="Legal & Professional">Legal & Professional</SelectItem>
+                          <SelectItem value="Insurance">Insurance</SelectItem>
+                          <SelectItem value="Equipment">Equipment</SelectItem>
+                          <SelectItem value="Software & Subscriptions">Software & Subscriptions</SelectItem>
+                          <SelectItem value="Miscellaneous">Miscellaneous</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="grid gap-2">
+                      <Label htmlFor="branch">Branch</Label>
+                      <Select value={expenseForm.branch_id} onValueChange={value => setExpenseForm(prev => ({ ...prev, branch_id: value }))}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select branch" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {branches.map(branch => (
+                            <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  <div className="flex justify-end gap-4">
+                    <Button variant="outline" onClick={() => setExpensesDialogOpen(false)} disabled={isAddingExpense}>Cancel</Button>
+                    <Button onClick={handleExpenseSubmit} disabled={isAddingExpense || !expenseForm.branch_id}>
+                      {isAddingExpense ? 'Adding...' : 'Add Expense'}
                     </Button>
                   </div>
                 </DialogContent>

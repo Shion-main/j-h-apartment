@@ -33,7 +33,7 @@ import {
   Receipt
 } from 'lucide-react';
 import { logAuditEvent } from '@/lib/audit/logger';
-import { getSupabaseClient, invalidateCache } from '@/lib/supabase/client';
+import { getSupabaseClient, invalidateCache, getBranches } from '@/lib/supabase/client';
 import { usePageTitleEffect } from '@/lib/hooks/usePageTitleEffect';
 import { z } from 'zod';
 import { useForm } from 'react-hook-form';
@@ -155,14 +155,11 @@ export default function TenantsPage() {
 
   const fetchBranches = async () => {
     try {
-      const response = await fetch('/api/branches');
-      const result = await response.json();
-      
-      if (result.success) {
-        setBranches(result.data || []);
-      }
+      // Use the helper for consistent client-side fetching
+      const data = await getBranches();
+      setBranches(data || []);
     } catch (error) {
-      console.error('Error fetching branches:', error);
+      setBranches([]);
     }
   };
 
