@@ -22,6 +22,19 @@ export interface EmailTemplateData {
   [key: string]: any; // Allow additional properties
 }
 
+interface DailyAdminRemindersData {
+  adminEmails: string[];
+  tenants: Array<{
+    full_name: string;
+    room_number: string;
+    branch_name: string;
+    cycle_end_date: string;
+    days_remaining: number;
+    reminder_day?: number;
+  }>;
+  reminderDay?: number; // 3, 2, or 1 days before
+}
+
 export class EmailService {
   /**
    * Create and configure SMTP transporter
@@ -1126,47 +1139,151 @@ export class EmailService {
   /**
    * Send daily admin reminders email
    */
-  static async sendDailyAdminRemindersEmail(data: {
-    adminEmails: string[];
-    tenants: Array<{
-      full_name: string;
-      room_number: string;
-      branch_name: string;
-      cycle_end_date: string;
-      days_remaining: number;
-    }>;
-  }): Promise<{ success: boolean; messageId?: string; error?: string }> {
+  static async sendDailyAdminRemindersEmail(data: DailyAdminRemindersData) {
     try {
-      if (!process.env.SMTP_HOST || !process.env.SMTP_USERNAME || !process.env.SMTP_PASSWORD) {
-        throw new Error('Missing SMTP configuration.');
-      }
+      const { adminEmails, tenants, reminderDay } = data;
+      
+      // Determine email subject and urgency based on reminder day
+      const dayText = reminderDay ? `Day ${reminderDay}` : '';
+      const urgencyText = reminderDay === 1 ? '🚨 URGENT' : reminderDay === 2 ? '⚠️ IMPORTANT' : '📅 NOTICE';
+      const subject = `${urgencyText} Billing Reminder ${dayText} - ${new Date().toLocaleDateString()}`;
 
-      const transporter = this.createTransporter();
-      const emailContent = this.generateDailyAdminRemindersEmail(data);
+      // Generate HTML content
+      const html = this.generateDailyRemindersEmailTemplate(tenants, reminderDay);
 
-      // Send to all admin emails
-      const emailPromises = data.adminEmails.map(async (email) => {
-        return await transporter.sendMail({
-          from: `"${process.env.FROM_NAME || 'J&H Management'}" <${process.env.FROM_EMAIL || process.env.SMTP_USERNAME}>`,
-          to: email,
-          subject: emailContent.subject,
-          html: emailContent.html
-        });
+      // Call the Supabase Edge Function
+      const response = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/send-email`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`
+        },
+        body: JSON.stringify({
+          emailType: 'daily_admin_reminders',
+          recipientData: { emails: adminEmails },
+          templateData: {
+            subject,
+            html,
+            tenants,
+            reminderDay
+          }
+        })
       });
 
-      const results = await Promise.allSettled(emailPromises);
-      const successful = results.filter(result => result.status === 'fulfilled').length;
+      if (!response.ok) {
+        const errorData = await response.text();
+        throw new Error(`Email service responded with status ${response.status}: ${errorData}`);
+      }
+
+      const result = await response.json();
       
-      console.log(`Daily admin reminders sent successfully to ${successful}/${data.adminEmails.length} recipients`);
-      
-      return { 
-        success: successful > 0, 
-        messageId: `sent-to-${successful}-admins`
-      };
+      if (!result.success) {
+        throw new Error(result.error || 'Unknown error from email service');
+      }
+
+      return { success: true };
     } catch (error) {
-      console.error('Failed to send daily admin reminders:', error);
-      return { success: false, error: error instanceof Error ? error.message : 'Unknown error occurred' };
+      console.error('EmailService error:', error);
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Unknown error' 
+      };
     }
+  }
+
+  private static generateDailyRemindersEmailTemplate(tenants: any[], reminderDay?: number): string {
+    const dayText = reminderDay ? ` - Day ${reminderDay}` : '';
+    const urgencyColor = reminderDay === 1 ? '#dc2626' : reminderDay === 2 ? '#ea580c' : '#2563eb';
+    const urgencyText = reminderDay === 1 ? '🚨 URGENT - FINAL REMINDER' : 
+                      reminderDay === 2 ? '⚠️ IMPORTANT - 2 DAYS REMAINING' : 
+                      '📅 NOTICE - 3 DAYS REMAINING';
+
+    return `
+      <div style="font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px;">
+        <div style="background-color: ${urgencyColor}; color: white; padding: 20px; border-radius: 8px 8px 0 0; text-align: center;">
+          <h1 style="margin: 0; font-size: 24px;">${urgencyText}</h1>
+          <p style="margin: 10px 0 0 0; font-size: 16px;">Daily Billing Reminders${dayText}</p>
+        </div>
+        
+        <div style="background-color: #f9fafb; padding: 20px; border: 1px solid #e5e7eb; border-top: none;">
+          <p><strong>Dear Administrator,</strong></p>
+          
+          ${reminderDay === 1 ? `
+            <div style="background-color: #fef2f2; border: 2px solid #dc2626; padding: 15px; border-radius: 8px; margin: 15px 0;">
+              <h3 style="color: #dc2626; margin-top: 0;">🚨 FINAL REMINDER - ACTION REQUIRED TODAY!</h3>
+              <p style="color: #7f1d1d; margin: 0;">These tenants' billing cycles end TOMORROW. Bills must be generated TODAY to avoid delays in payment collection.</p>
+            </div>
+          ` : reminderDay === 2 ? `
+            <div style="background-color: #fef3c7; border: 2px solid #ea580c; padding: 15px; border-radius: 8px; margin: 15px 0;">
+              <h3 style="color: #ea580c; margin-top: 0;">⚠️ IMPORTANT - 2 DAYS REMAINING</h3>
+              <p style="color: #92400e; margin: 0;">These tenants' billing cycles end in 2 days. Please prepare to generate bills soon.</p>
+            </div>
+          ` : `
+            <div style="background-color: #eff6ff; border: 2px solid #2563eb; padding: 15px; border-radius: 8px; margin: 15px 0;">
+              <h3 style="color: #2563eb; margin-top: 0;">📅 ADVANCE NOTICE - 3 DAYS REMAINING</h3>
+              <p style="color: #1e40af; margin: 0;">These tenants' billing cycles end in 3 days. Start planning bill generation.</p>
+            </div>
+          `}
+          
+          <h3 style="color: #374151; margin-top: 25px;">Tenants Requiring Bill Generation</h3>
+          
+          <table style="width: 100%; border-collapse: collapse; margin: 15px 0; background-color: white; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+            <thead>
+              <tr style="background-color: #f3f4f6;">
+                <th style="padding: 12px; text-align: left; border-bottom: 1px solid #d1d5db; font-weight: 600;">Tenant Name</th>
+                <th style="padding: 12px; text-align: left; border-bottom: 1px solid #d1d5db; font-weight: 600;">Room</th>
+                <th style="padding: 12px; text-align: left; border-bottom: 1px solid #d1d5db; font-weight: 600;">Branch</th>
+                <th style="padding: 12px; text-align: left; border-bottom: 1px solid #d1d5db; font-weight: 600;">Cycle End Date</th>
+                <th style="padding: 12px; text-align: center; border-bottom: 1px solid #d1d5db; font-weight: 600;">Days Left</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${tenants.map((tenant, index) => `
+                <tr style="${index % 2 === 0 ? 'background-color: #f9fafb;' : 'background-color: white;'}">
+                  <td style="padding: 12px; border-bottom: 1px solid #e5e7eb;">${tenant.full_name}</td>
+                  <td style="padding: 12px; border-bottom: 1px solid #e5e7eb;">${tenant.room_number}</td>
+                  <td style="padding: 12px; border-bottom: 1px solid #e5e7eb;">${tenant.branch_name}</td>
+                  <td style="padding: 12px; border-bottom: 1px solid #e5e7eb;">${new Date(tenant.cycle_end_date).toLocaleDateString()}</td>
+                  <td style="padding: 12px; border-bottom: 1px solid #e5e7eb; text-align: center;">
+                    <span style="
+                      padding: 4px 8px; 
+                      border-radius: 4px; 
+                      font-weight: 600;
+                      color: white;
+                      background-color: ${tenant.days_remaining === 1 ? '#dc2626' : tenant.days_remaining === 2 ? '#ea580c' : '#2563eb'};
+                    ">
+                      ${tenant.days_remaining} day${tenant.days_remaining !== 1 ? 's' : ''}
+                    </span>
+                  </td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+          
+          <div style="margin-top: 25px; padding: 15px; background-color: #f0f9ff; border-radius: 8px; border-left: 4px solid #0ea5e9;">
+            <h4 style="color: #0c4a6e; margin-top: 0;">💡 Quick Actions</h4>
+            <ul style="color: #0c4a6e; margin: 0; padding-left: 20px;">
+              <li>Log into J&H Management System</li>
+              <li>Navigate to Billing section</li>
+              <li>Generate bills for the listed tenants</li>
+              <li>Send bill notifications to tenants</li>
+            </ul>
+          </div>
+          
+          <div style="margin-top: 20px; text-align: center; padding: 15px; background-color: #f3f4f6; border-radius: 8px;">
+            <p style="margin: 0; color: #6b7280; font-size: 14px;">
+              This is an automated reminder from J&H Management System<br>
+              Generated on ${new Date().toLocaleDateString('en-PH', { 
+                weekday: 'long', 
+                year: 'numeric', 
+                month: 'long', 
+                day: 'numeric' 
+              })}
+            </p>
+          </div>
+        </div>
+      </div>
+    `;
   }
 
   /**

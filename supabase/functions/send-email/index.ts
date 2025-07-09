@@ -1,5 +1,6 @@
 /// <reference lib="deno.ns" />
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
+import nodemailer from 'npm:nodemailer';
 
 serve(async (req: Request) => {
   // Set CORS headers
@@ -61,14 +62,101 @@ serve(async (req: Request) => {
       );
     }
     
-    // If all variables are set, return success
+    // Parse request body
+    const requestBody = await req.json();
+    console.log('Request Body:', JSON.stringify(requestBody, null, 2));
+    
+    // Extract email parameters from request
+    const { emailType, recipientData, templateData } = requestBody;
+    
+    if (!emailType || !recipientData || !templateData) {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: 'Missing required parameters: emailType, recipientData, or templateData'
+        }),
+        { headers: corsHeaders, status: 400 }
+      );
+    }
+    
+    // Get recipient emails
+    let recipients = [];
+    
+    if (recipientData.email) {
+      recipients.push(recipientData.email);
+    } else if (recipientData.emails && Array.isArray(recipientData.emails)) {
+      recipients = recipientData.emails;
+    } else {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: 'Missing recipient email(s)'
+        }),
+        { headers: corsHeaders, status: 400 }
+      );
+    }
+    
+    // Configure mail transporter
+    const transporter = nodemailer.createTransport({
+      host: Deno.env.get('SMTP_HOST'),
+      port: parseInt(Deno.env.get('SMTP_PORT') || '465'),
+      secure: true, // true for 465, false for other ports
+      auth: {
+        user: Deno.env.get('SMTP_USERNAME'),
+        pass: Deno.env.get('SMTP_PASSWORD')
+      }
+    });
+    
+    console.log('Mail transporter created');
+    
+    // Send email(s)
+    const emailResults = [];
+    
+    for (const recipient of recipients) {
+      try {
+        console.log(`Sending email to ${recipient}...`);
+        
+        const emailContent = {
+          from: `"${Deno.env.get('FROM_NAME')}" <${Deno.env.get('FROM_EMAIL')}>`,
+          to: recipient,
+          subject: templateData.subject || `J&H Management - ${emailType}`,
+          html: templateData.html
+        };
+        
+        // Add attachments if present
+        if (templateData.attachments && Array.isArray(templateData.attachments)) {
+          emailContent.attachments = templateData.attachments;
+        }
+        
+        const info = await transporter.sendMail(emailContent);
+        
+        console.log(`Email sent to ${recipient}: ${info.messageId}`);
+        emailResults.push({
+          recipient,
+          success: true,
+          messageId: info.messageId
+        });
+      } catch (error) {
+        console.error(`Failed to send email to ${recipient}:`, error);
+        emailResults.push({
+          recipient,
+          success: false,
+          error: error.message
+        });
+      }
+    }
+    
+    // Check if all emails were sent successfully
+    const allSuccessful = emailResults.every(result => result.success);
+    
     return new Response(
       JSON.stringify({
-        success: true,
-        message: 'All environment variables are configured!',
-        environmentStatus: envStatus
+        success: allSuccessful,
+        emailResults,
+        emailsSent: emailResults.filter(r => r.success).length,
+        emailsFailed: emailResults.filter(r => !r.success).length
       }),
-      { headers: corsHeaders, status: 200 }
+      { headers: corsHeaders, status: allSuccessful ? 200 : 207 }
     );
     
   } catch (error) {

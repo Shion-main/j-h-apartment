@@ -8,7 +8,12 @@ let supabaseInstance: ReturnType<typeof createClientComponentClient<Database>> |
 
 export function getSupabaseClient() {
   if (!supabaseInstance) {
-    supabaseInstance = createClientComponentClient<Database>();
+    try {
+      supabaseInstance = createClientComponentClient<Database>();
+    } catch (error) {
+      console.error('Failed to initialize Supabase client:', error);
+      throw error;
+    }
   }
   return supabaseInstance;
 }
@@ -30,33 +35,48 @@ export { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 
 // Utility functions for common database operations
 export async function getCurrentUser() {
-  const { data: { user }, error } = await supabase.auth.getUser();
-  if (error) throw error;
-  return user;
+  try {
+    const { data: { user }, error } = await supabase.auth.getUser();
+    if (error) throw error;
+    return user;
+  } catch (error) {
+    console.error('Failed to get current user:', error);
+    throw error;
+  }
 }
 
 export async function getUserProfile(userId: string) {
-  const { data, error } = await supabase
-    .from('profiles')
-    .select(`
-      *,
-      user_roles (
-        role_id,
-        roles (
-          role_name
+  try {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select(`
+        *,
+        user_roles (
+          role_id,
+          roles (
+            role_name
+          )
         )
-      )
-    `)
-    .eq('id', userId)
-    .single();
-  
-  if (error) throw error;
-  return data;
+      `)
+      .eq('id', userId)
+      .single();
+    
+    if (error) throw error;
+    return data;
+  } catch (error) {
+    console.error('Failed to get user profile:', error);
+    throw error;
+  }
 }
 
 export async function signOut() {
-  const { error } = await supabase.auth.signOut();
-  if (error) throw error;
+  try {
+    const { error } = await supabase.auth.signOut();
+    if (error) throw error;
+  } catch (error) {
+    console.error('Failed to sign out:', error);
+    throw error;
+  }
 }
 
 // Typed query helpers with optimized caching

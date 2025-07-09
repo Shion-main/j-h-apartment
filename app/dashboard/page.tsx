@@ -23,7 +23,9 @@ import {
   TableCellsIcon,
   ExclamationTriangleIcon,
   CheckCircleIcon,
-  PlusIcon
+  PlusIcon,
+  BellIcon,
+  ClockIcon
 } from '@heroicons/react/24/outline';
 
 interface DashboardStats {
@@ -192,6 +194,11 @@ function DashboardPage() {
   });
   const [branches, setBranches] = useState<any[]>([]);
   
+  // Add new state for reminders
+  const [reminderHistoryDialogOpen, setReminderHistoryDialogOpen] = useState(false);
+  const [isTestingReminders, setIsTestingReminders] = useState(false);
+  const [reminderHistory, setReminderHistory] = useState<any[]>([]);
+  
   // Persistent cache with better structure
   const [apiCache] = useState(() => new Map<string, { data: any; timestamp: number; ttl: number }>());
   
@@ -356,6 +363,69 @@ function DashboardPage() {
     };
   }, []);
 
+  // Add function to fetch reminder history
+  const fetchReminderHistory = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from('billing_reminders')
+        .select(`
+          *,
+          tenants (
+            full_name,
+            rooms (
+              room_number,
+              branches (name)
+            )
+          )
+        `)
+        .order('created_at', { ascending: false })
+        .limit(50);
+
+      if (error) throw error;
+      setReminderHistory(data || []);
+    } catch (error) {
+      console.error('Error fetching reminder history:', error);
+      toast({
+        title: "Error",
+        description: "Failed to fetch reminder history",
+        variant: "destructive",
+      });
+    }
+  }, [supabase, toast]);
+
+  // Add function to test daily reminders
+  const testDailyReminders = useCallback(async () => {
+    setIsTestingReminders(true);
+    try {
+      const response = await fetch('/api/admin/daily-reminders', {
+        method: 'POST',
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        toast({
+          title: "Daily Reminders Sent",
+          description: `${result.data.totalEmailsSent} emails sent for ${result.data.totalTenantsRequiringReminders} tenants`,
+        });
+        
+        // Refresh reminder history
+        await fetchReminderHistory();
+      } else {
+        throw new Error(result.error || 'Failed to send reminders');
+      }
+    } catch (error) {
+      console.error('Error testing daily reminders:', error);
+      toast({
+        title: "Error",
+        description: "Failed to send daily reminders",
+        variant: "destructive",
+      });
+    } finally {
+      setIsTestingReminders(false);
+    }
+  }, [toast, fetchReminderHistory]);
+
   // Optimized effects with dependency arrays
   useEffect(() => {
     fetchDashboardStats();
@@ -406,15 +476,24 @@ function DashboardPage() {
     setIsSendingReminders(true);
     try {
       const response = await fetch('/api/admin/daily-reminders', {
-        method: 'POST'
+        method: 'POST',
       });
 
-      if (!response.ok) throw new Error('Failed to send reminders');
+      const result = await response.json();
 
-      toast({
-        title: "Success",
-        description: "Daily reminders sent successfully"
-      });
+      if (result.success) {
+        toast({
+          title: "Daily Reminders Sent",
+          description: `${result.data.totalEmailsSent} emails sent for ${result.data.totalTenantsRequiringReminders} tenants`,
+        });
+        
+        // Refresh reminder history if the function exists
+        if (typeof fetchReminderHistory === 'function') {
+          await fetchReminderHistory();
+        }
+      } else {
+        throw new Error(result.error || 'Failed to send reminders');
+      }
     } catch (error) {
       console.error('Error sending reminders:', error);
       toast({
@@ -425,7 +504,7 @@ function DashboardPage() {
     } finally {
       setIsSendingReminders(false);
     }
-  }, [toast]);
+  }, [toast, fetchReminderHistory]);
 
   const sendMonthlyReportEmail = useCallback(async () => {
     if (!emailAddresses.trim()) {
@@ -901,6 +980,132 @@ function DashboardPage() {
             </CardContent>
           </Card>
         </div>
+
+        {/* Daily Reminders Management */}
+        <Card className="floating-card">
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <BellIcon className="h-6 w-6 text-blue-600" />
+                <div>
+                  <CardTitle className="text-lg">Daily Billing Reminders</CardTitle>
+                  <CardDescription>Automated reminders for tenant billing cycles</CardDescription>
+                </div>
+              </div>
+            </div>
+          </CardHeader>
+          
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+                <div className="flex items-center space-x-2">
+                  <div className="w-3 h-3 bg-blue-600 rounded-full"></div>
+                  <span className="text-sm font-medium text-blue-900">Day 3 Notice</span>
+                </div>
+                <p className="text-xs text-blue-700 mt-1">Advance planning reminder</p>
+              </div>
+              
+              <div className="bg-orange-50 p-4 rounded-lg border border-orange-200">
+                <div className="flex items-center space-x-2">
+                  <div className="w-3 h-3 bg-orange-600 rounded-full"></div>
+                  <span className="text-sm font-medium text-orange-900">Day 2 Important</span>
+                </div>
+                <p className="text-xs text-orange-700 mt-1">Preparation reminder</p>
+              </div>
+              
+              <div className="bg-red-50 p-4 rounded-lg border border-red-200">
+                <div className="flex items-center space-x-2">
+                  <div className="w-3 h-3 bg-red-600 rounded-full"></div>
+                  <span className="text-sm font-medium text-red-900">Day 1 Urgent</span>
+                </div>
+                <p className="text-xs text-red-700 mt-1">Final action reminder</p>
+              </div>
+            </div>
+            
+            <div className="flex flex-col sm:flex-row gap-3">
+              <Button 
+                onClick={testDailyReminders}
+                disabled={isTestingReminders}
+                className="flex-1"
+              >
+                <BellIcon className="h-4 w-4 mr-2" />
+                {isTestingReminders ? 'Sending...' : 'Test Daily Reminders'}
+              </Button>
+              
+              <Button 
+                variant="outline"
+                onClick={() => {
+                  fetchReminderHistory();
+                  setReminderHistoryDialogOpen(true);
+                }}
+                className="flex-1"
+              >
+                <ClockIcon className="h-4 w-4 mr-2" />
+                View History
+              </Button>
+            </div>
+            
+            <div className="text-xs text-gray-500 bg-gray-50 p-3 rounded-lg">
+              <p><strong>Automated Schedule:</strong> Daily reminders are automatically sent at 9:00 AM for tenants whose billing cycles end in 3, 2, or 1 days.</p>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Reminder History Dialog */}
+        <Dialog open={reminderHistoryDialogOpen} onOpenChange={setReminderHistoryDialogOpen}>
+          <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Daily Reminder History</DialogTitle>
+              <DialogDescription>
+                Recent daily billing reminder emails sent to administrators
+              </DialogDescription>
+            </DialogHeader>
+            
+            <div className="space-y-4">
+              {reminderHistory.length > 0 ? (
+                <div className="space-y-3">
+                  {reminderHistory.map((reminder) => (
+                    <div key={reminder.id} className="border rounded-lg p-4 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-3">
+                          <div className={`w-3 h-3 rounded-full ${
+                            reminder.reminder_day === 1 ? 'bg-red-600' :
+                            reminder.reminder_day === 2 ? 'bg-orange-600' : 'bg-blue-600'
+                          }`}></div>
+                          <div>
+                            <h4 className="font-medium">{reminder.tenants?.full_name}</h4>
+                            <p className="text-sm text-gray-600">
+                              {reminder.tenants?.rooms?.room_number} • {reminder.tenants?.rooms?.branches?.name}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-sm font-medium">
+                            Day {reminder.reminder_day} Reminder
+                          </p>
+                          <p className="text-xs text-gray-500">
+                            {new Date(reminder.created_at).toLocaleDateString()}
+                          </p>
+                        </div>
+                      </div>
+                      
+                      <div className="text-xs text-gray-500 space-y-1">
+                        <p>Cycle End: {new Date(reminder.billing_cycle_end_date).toLocaleDateString()}</p>
+                        <p>Sent to: {reminder.email_sent_to?.join(', ')}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-8 text-gray-500">
+                  <BellIcon className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+                  <p>No reminder history found</p>
+                  <p className="text-sm">Daily reminders will appear here once sent</p>
+                </div>
+              )}
+            </div>
+          </DialogContent>
+        </Dialog>
 
         {renderExpenseDialog()}
       </div>
