@@ -125,27 +125,29 @@ const StatCard = memo(({
   isLoading?: boolean;
   formatValue?: (value: number) => string;
 }) => (
-  <div className="stats-card">
-    <div className="flex items-center justify-between">
-      <div className="flex items-center space-x-3">
-        <div className="flex-shrink-0">
-          <div className="stats-icon">
-            <Icon className="h-6 w-6 text-white" />
+  <Card className="bg-white border-gray-200 hover:shadow-md transition-shadow">
+    <CardContent className="p-6">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center space-x-3">
+          <div className="flex-shrink-0">
+            <div className="w-12 h-12 bg-blue-600 rounded-lg flex items-center justify-center">
+              <Icon className="h-6 w-6 text-white" />
+            </div>
           </div>
-        </div>
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium text-gray-600 truncate">{title}</p>
-          <div className="flex items-baseline space-x-2">
-            {isLoading ? (
-              <div className="h-8 w-24 bg-gray-200 rounded animate-pulse" />
-            ) : (
-              <p className="text-2xl font-bold text-gray-900">{formatValue(value)}</p>
-            )}
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-medium text-gray-600 truncate">{title}</p>
+            <div className="flex items-baseline space-x-2">
+              {isLoading ? (
+                <div className="h-8 w-24 bg-gray-200 rounded animate-pulse" />
+              ) : (
+                <p className="text-2xl font-bold text-gray-900">{formatValue(value)}</p>
+              )}
+            </div>
           </div>
         </div>
       </div>
-    </div>
-  </div>
+    </CardContent>
+  </Card>
 ));
 
 StatCard.displayName = 'StatCard';

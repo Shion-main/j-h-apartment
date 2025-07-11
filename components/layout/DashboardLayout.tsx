@@ -1,11 +1,10 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, createContext, useContext, memo } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { getSupabaseClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
 import Sidebar from './Sidebar';
-import { usePageTitle } from '@/lib/contexts/PageTitleContext';
 import { 
   LogOut,
   Menu,
@@ -14,24 +13,155 @@ import {
   Loader2
 } from 'lucide-react';
 import type { User as SupabaseUser } from '@supabase/supabase-js';
-import { LoadingState } from '@/components/ui/loading-state';
+import { usePageTitle } from '@/lib/contexts/PageTitleContext';
 
 interface DashboardLayoutProps {
   children: React.ReactNode;
 }
 
+// Memoized user menu component to prevent unnecessary re-renders
+const UserMenu = memo(({ userProfile, onSignOut }: { userProfile: any; onSignOut: () => void }) => (
+  <div className="flex items-center space-x-4">
+    <div className="flex items-center space-x-2">
+      <div className="bg-blue-600 text-white p-2 rounded-full">
+        <User className="h-4 w-4" />
+      </div>
+      <div className="hidden md:block">
+        <p className="text-sm font-medium text-gray-900">
+          {userProfile?.username || userProfile?.email || 'User'}
+        </p>
+        <p className="text-xs text-gray-500">
+          {userProfile?.user_roles?.[0]?.roles?.role_name || 'Staff'}
+        </p>
+      </div>
+    </div>
+    <Button
+      onClick={onSignOut}
+      variant="outline"
+      size="sm"
+      className="text-gray-600 border-gray-200 hover:bg-gray-50"
+    >
+      <LogOut className="h-4 w-4 mr-2" />
+      Sign Out
+    </Button>
+  </div>
+));
+
+UserMenu.displayName = 'UserMenu';
+
+// Memoized header component to prevent unnecessary re-renders
+const DashboardHeader = memo(({ 
+  title, 
+  subtitle, 
+  userProfile, 
+  onSignOut, 
+  onMenuToggle 
+}: {
+  title: string;
+  subtitle: string;
+  userProfile: any;
+  onSignOut: () => void;
+  onMenuToggle: () => void;
+}) => (
+  <div className="sticky top-0 z-20 px-4 py-3 bg-gray-50">
+    <div className="floating-header px-5 py-3 flex items-center justify-between animate-fadeIn">
+      <div className="flex items-center min-w-0 flex-1">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="lg:hidden rounded-lg hover:bg-gray-100 mr-3 flex-shrink-0"
+          onClick={onMenuToggle}
+        >
+          <Menu className="h-5 w-5" />
+        </Button>
+        
+        <div className="min-w-0 flex-1">
+          <h1 className="text-xl font-bold text-gray-900 truncate">{title}</h1>
+          {subtitle && (
+            <p className="text-sm text-gray-600 truncate">{subtitle}</p>
+          )}
+        </div>
+      </div>
+      
+      <UserMenu userProfile={userProfile} onSignOut={onSignOut} />
+    </div>
+  </div>
+));
+
+DashboardHeader.displayName = 'DashboardHeader';
+
+// Memoized mobile sidebar to prevent unnecessary re-renders
+const MobileSidebar = memo(({ 
+  isOpen, 
+  onClose, 
+  isAuthenticated 
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  isAuthenticated: boolean;
+}) => (
+  <>
+    {isOpen && (
+      <div 
+        className="lg:hidden fixed inset-0 z-40 bg-black bg-opacity-50 backdrop-blur-sm"
+        onClick={onClose}
+      />
+    )}
+    
+    <aside className={`lg:hidden fixed inset-y-0 left-0 z-50 w-72 transform transition-transform duration-300 ease-in-out ${
+      isOpen ? 'translate-x-0' : '-translate-x-full'
+    }`} style={{ height: '100vh', position: 'fixed' }}>
+      <div className="floating-sidebar flex flex-col h-full m-3 overflow-hidden">
+        <div className="flex items-center justify-between p-4 border-b border-gray-100/50">
+          <h1 className="text-xl font-bold text-blue-700">J&H Management</h1>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onClose}
+            className="rounded-lg hover:bg-gray-100"
+          >
+            <X className="h-5 w-5" />
+          </Button>
+        </div>
+        <div className="overflow-y-auto" style={{ maxHeight: 'calc(100vh - 70px)' }}>
+          <Sidebar isAuthenticated={isAuthenticated} />
+        </div>
+      </div>
+    </aside>
+  </>
+));
+
+MobileSidebar.displayName = 'MobileSidebar';
+
+// Memoized loading component
+const LoadingSpinner = memo(() => (
+  <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50">
+    <div className="floating-card p-8 flex flex-col items-center animate-pulse">
+      <Loader2 className="h-16 w-16 animate-spin text-blue-600" />
+      <p className="mt-4 text-blue-600 font-medium">Loading J&H Management System</p>
+    </div>
+  </div>
+));
+
+LoadingSpinner.displayName = 'LoadingSpinner';
+
 export default function DashboardLayout({ children }: DashboardLayoutProps) {
-  const { title, subtitle } = usePageTitle();
   const router = useRouter();
   const pathname = usePathname();
+  
+  // Optimized state management
   const [userProfile, setUserProfile] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   
+  // Use the global page title context
+  const { title, subtitle } = usePageTitle();
+  
   // Use the optimized singleton Supabase client
   const supabase = useMemo(() => getSupabaseClient(), []);
 
+  // Memoized fetch user profile function
   const fetchUserProfile = useCallback(async (user: SupabaseUser) => {
     try {
       const { data: profile, error } = await supabase
@@ -58,35 +188,44 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     }
   }, [supabase]);
 
+  // Memoized sign out handler
+  const handleSignOut = useCallback(async () => {
+    try {
+      await supabase.auth.signOut();
+      router.replace('/login');
+    } catch (error) {
+      console.error('Sign out error:', error);
+    }
+  }, [supabase, router]);
+
+  // Memoized sidebar toggle handler
+  const handleSidebarToggle = useCallback(() => {
+    setSidebarOpen(prev => !prev);
+  }, []);
+
+  // Memoized close sidebar handler
+  const handleCloseSidebar = useCallback(() => {
+    setSidebarOpen(false);
+  }, []);
+
+  // Optimized authentication effect
   useEffect(() => {
     let mounted = true;
     
     const checkSession = async () => {
       try {
-        // Get session and fetch profile in parallel
-        const [sessionResult] = await Promise.all([
-          supabase.auth.getSession(),
-          // Pre-warm the cache
-          supabase.auth.getUser().catch(() => null)
-        ]);
-
-        const { data: { session } } = sessionResult;
+        const { data: { session } } = await supabase.auth.getSession();
 
         if (!mounted) return;
 
         if (!session) {
           setIsAuthenticated(false);
-          setIsLoading(false);
           router.replace('/login');
           return;
         }
         
-        // Fetch profile and set states in parallel
-        const [profile] = await Promise.all([
-          fetchUserProfile(session.user),
-          setIsAuthenticated(true)
-        ]);
-
+        setIsAuthenticated(true);
+        const profile = await fetchUserProfile(session.user);
         if (mounted && profile) {
           setUserProfile(profile);
         }
@@ -103,7 +242,6 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
       }
     };
 
-    // Start auth check immediately
     checkSession();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
@@ -128,30 +266,26 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     };
   }, [supabase, router, fetchUserProfile]);
 
-  const handleSignOut = useCallback(async () => {
-    try {
-      await supabase.auth.signOut();
-    } catch (error) {
-      console.error('Sign out error:', error);
-    }
-  }, [supabase]);
-
-  // Show loading state only for initial load
+  // Early returns for loading and unauthenticated states
   if (isLoading) {
-    return <LoadingState message="Initializing your dashboard..." />;
+    return <LoadingSpinner />;
   }
 
-  // Don't show anything while redirecting to login
   if (!isAuthenticated || !userProfile) {
-    return null;
+    if (typeof window !== 'undefined') {
+      router.replace('/login');
+    }
+    return <LoadingSpinner />;
   }
-
-  const userRole = userProfile?.user_roles?.[0]?.roles?.role_name || 'Staff';
 
   return (
-    <div className="h-screen bg-gray-50 flex overflow-hidden">
+    <div className="h-screen bg-gray-50 flex">
       {/* Fixed Sidebar - Desktop */}
-      <Sidebar isAuthenticated={isAuthenticated} />
+      <div className="hidden lg:flex lg:flex-shrink-0">
+        <div className="w-72">
+          <Sidebar isAuthenticated={isAuthenticated} />
+        </div>
+      </div>
       
       {/* Mobile sidebar overlay */}
       {sidebarOpen && (
@@ -181,9 +315,9 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
       </div>
 
       {/* Main content area */}
-      <div className="flex-1 lg:ml-72 flex flex-col h-screen">
+      <div className="flex-1 min-w-0 flex flex-col">
         {/* Fixed Top bar */}
-        <div className="bg-white shadow-sm border-b border-gray-200 px-4 py-3 flex items-center justify-between fixed top-0 right-0 left-0 lg:left-72 z-20">
+        <div className="bg-white shadow-lg px-6 py-4 flex items-center justify-between fixed top-4 right-4 left-4 lg:left-[19.5rem] z-20 rounded-lg">
           <div className="flex items-center space-x-4">
             <Button
               variant="ghost"
@@ -205,7 +339,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
           <div className="flex items-center space-x-4">
             <div className="text-right hidden sm:block">
               <div className="text-sm font-medium text-gray-900">{userProfile.full_name || userProfile.email}</div>
-              <div className="text-xs text-gray-500">{userRole}</div>
+              <div className="text-xs text-gray-500">{userProfile.user_roles?.[0]?.roles?.role_name}</div>
             </div>
             <div className="flex items-center space-x-2">
               <User className="h-5 w-5 text-gray-400" />
@@ -222,10 +356,10 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
         </div>
 
         {/* Scrollable Page content */}
-        <main className="flex-1 overflow-y-auto pt-16 p-4 sm:p-6 lg:p-8">
+        <main className="flex-1 overflow-y-auto pt-28 px-4 sm:px-6 lg:px-8">
           {children}
         </main>
       </div>
     </div>
   );
-} 
+}
